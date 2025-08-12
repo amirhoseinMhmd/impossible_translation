@@ -34,22 +34,13 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--parse', action='store_true',
                         help="Include constituency parse")
 
-    # Get args
     args = parser.parse_args()
 
-    # Init Stanza NLP tools
     nlp1 = stanza.Pipeline(
         lang='en',
-        processors='tokenize, pos, lemma',
+        processors='tokenize, lemma',
         package="default_accurate",
         use_gpu=True)
-
-    # If constituency parse is needed, init second Stanza parser
-    if args.parse:
-        nlp2 = stanza.Pipeline(lang='en',
-                               processors='tokenize,pos,constituency',
-                               package="default_accurate",
-                               use_gpu=True)
 
     BATCH_SIZE = 100
 
@@ -92,19 +83,10 @@ if __name__ == "__main__":
                     }
                     word_annotations.append(wa)  # Track word annotation
 
-                # Get constituency parse if needed
-                if args.parse:
-                    constituency_parse = __get_constituency_parse(sent, nlp2)
-                    sa = {
-                        'sent_text': sent.text,
-                        'constituency_parse': constituency_parse,
-                        'word_annotations': word_annotations,
-                    }
-                else:
-                    sa = {
-                        'sent_text': sent.text,
-                        'word_annotations': word_annotations,
-                    }
+                sa = {
+                    'sent_text': sent.text,
+                    'word_annotations': word_annotations,
+                }
                 sent_annotations.append(sa)  # Track sent annotation
 
             la = {
