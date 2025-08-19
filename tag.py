@@ -1,117 +1,101 @@
 import sys
-
 sys.path.append("..")
 
 import tqdm
 import os
 import argparse
-import stanza
 import json
+import spacy
+import torch
+from sentence_transformers import SentenceTransformer
+import benepar
 
-
-def __get_constituency_parse(sent, nlp):
-    # Try parsing the doc
+def __get_constituency_parse(sent):
     try:
-        parse_doc = nlp(sent.text)
-    except:
+        tree = sent._.parse_string
+        return f"(ROOT {tree})"
+    except Exception:
         return None
-
-    # Get set of constituency parse trees
-    parse_trees = [str(sent.constituency) for sent in parse_doc.sentences]
-
-    # Join parse trees and add ROOT
-    constituency_parse = "(ROOT " + " ".join(parse_trees) + ")"
-    return constituency_parse
-
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog='Tag BabyLM dataset',
-        description='Tag BabyLM dataset using Stanza')
+        description='Tag BabyLM dataset using spaCy + Sentence-Transformers + Benepar')
     parser.add_argument('path', type=argparse.FileType('r'),
                         nargs='+', help="Path to file(s)")
     parser.add_argument('-p', '--parse', action='store_true',
                         help="Include constituency parse")
-
     args = parser.parse_args()
 
-    nlp1 = stanza.Pipeline(
-        lang='en',
-        processors='tokenize, lemma',
-        package="default_accurate",
-        use_gpu=True)
+    # Detect device
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    print(f"Using device: {device}")
 
-    # If constituency parse is needed, init second Stanza parser
+    # Load spaCy with Benepar
+    nlp_spacy = spacy.load("en_core_web_trf", disable=["ner"])
     if args.parse:
-        nlp2 = stanza.Pipeline(lang='en',
-                               processors='tokenize,pos,constituency',
-                               package="default_accurate",
-                               use_gpu=True)
+        if not benepar.is_loaded('benepar_en3'):
+            benepar.download('benepar_en3')
+        nlp_spacy.add_pipe("benepar", config={"model": "benepar_en3"})
+
+    # Load Sentence-Transformers
+    model = SentenceTransformer('all-MiniLM-L6-v2', device=str(device))
 
     BATCH_SIZE = 1000
 
-    # Iterate over BabyLM files
     for file in args.path:
-
         print(file.name)
-        lines = file.readlines()
-
-        # Strip lines and join text
-        print("Concatenating lines...")
-        lines = [l.strip() for l in lines]
-        line_batches = [lines[i:i + BATCH_SIZE]
-                        for i in range(0, len(lines), BATCH_SIZE)]
+        lines = [l.strip() for l in file.readlines()]
+        line_batches = [lines[i:i + BATCH_SIZE] for i in range(0, len(lines), BATCH_SIZE)]
         text_batches = [" ".join(l) for l in line_batches]
 
-        # Iterate over lines in file and track annotations
         line_annotations = []
-        print("Segmenting and parsing text batches...")
+        print("Segmenting, annotating, and embedding...")
+
         for text in tqdm.tqdm(text_batches):
-            # Tokenize text with stanza
-            doc = nlp1(text)
+            doc = nlp_spacy(text)
 
-            # Iterate over sents in the line and track annotations
             sent_annotations = []
-            for sent in doc.sentences:
-
-                # Iterate over words in sent and track annotations
+            for sent in doc.sents:
                 word_annotations = []
-                for token, word in zip(sent.tokens, sent.words):
+                for i, token in enumerate(sent, start=1):
+                    feats_str = "|".join(f"{k}={v}" for k, v in token.morph.to_dict().items()) or None
                     wa = {
-                        'id': word.id,
-                        'text': word.text,
-                        'lemma': word.lemma,
-                        'upos': word.upos,
-                        'xpos': word.xpos,
-                        'feats': word.feats,
-                        'start_char': token.start_char,
-                        'end_char': token.end_char
+                        'id': i,
+                        'text': token.text,
+                        'lemma': token.lemma_,
+                        'upos': token.pos_,
+                        'xpos': token.tag_,
+                        'feats': feats_str,
+                        'start_char': token.idx,
+                        'end_char': token.idx + len(token.text)
                     }
-                    word_annotations.append(wa)  # Track word annotation
+                    word_annotations.append(wa)
+
+                emb = model.encode(sent.text, convert_to_numpy=True).tolist()
+
+                sa = {
+                    'sent_text': sent.text,
+                    'word_annotations': word_annotations,
+                    'embedding': emb
+                }
 
                 if args.parse:
-                    constituency_parse = __get_constituency_parse(sent, nlp2)
-                    sa = {
-                        'sent_text': sent.text,
-                        'constituency_parse': constituency_parse,
-                        'word_annotations': word_annotations,
-                    }
-                else:
-                    sa = {
-                        'sent_text': sent.text,
-                        'word_annotations': word_annotations,
-                    }
-                sent_annotations.append(sa)  # Track sent annotation
+                    sa['constituency_parse'] = __get_constituency_parse(sent)
 
-            la = {
-                'sent_annotations': sent_annotations
-            }
-            line_annotations.append(la)  # Track line annotation
+                sent_annotations.append(sa)
 
-        # Write annotations to file as a JSON
-        print("Writing JSON outfile...")
+            line_annotations.append({'sent_annotations': sent_annotations})
+
         ext = '_parsed.json' if args.parse else '.json'
-        json_filename = os.path.splitext(file.name)[0] + ext
-        with open(json_filename, "w") as outfile:
+        out_name = os.path.splitext(file.name)[0] + ext
+        with open(out_name, "w") as outfile:
             json.dump(line_annotations, outfile, indent=4)
+
+        print(f"Saved: {out_name}")
