@@ -1,4 +1,6 @@
 import json
+import os.path
+from glob import glob
 
 from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
@@ -52,29 +54,37 @@ if __name__ == '__main__':
                         help="Type of perturbation")
     args = parser.parse_args()
 
-    inpt_data = open(args.path)
-    data = json.load(inpt_data)
-    inpt_data.close()
-    results = []
-    for line in tqdm(data):
-        for sent in line['sent_annotations']:
-            results.append(sent)
+    pert_type = args.type
+    json_ext = ".json"
+    babylm_data = glob(f"{args.path}/*{json_ext}")
+    if not os.path.exists(pert_type):
+        os.mkdir(pert_type)
 
-    output_data = []
-    for sent in results:
-        perturbed_text, original_text = purturbe(sent, args.type)
-        res = {
-            'original_text': original_text,
-            'perturbed_text': perturbed_text
+    for file in babylm_data:
+        print(file)
+        f = open(file)
+        data = json.load(f)
+        f.close()
+
+        results = []
+        for line in data:
+            for sent in line['sent_annotations']:
+                results.append(sent)
+
+        output_data = []
+        for sent in tqdm(results):
+            perturbed_text, original_text = purturbe(sent, pert_type)
+            res = {
+                'original_text': original_text,
+                'perturbed_text': perturbed_text
+            }
+            output_data.append(res)
+
+        train_data, validate_data = train_test_split(output_data, test_size=0.2, random_state=42)
+
+        dataset = {
+            "train": train_data,
+            "validate": validate_data
         }
-        output_data.append(res)
-
-    train_data, validate_data = train_test_split(output_data, test_size=0.2, random_state=42)
-
-    dataset = {
-        "train": train_data,
-        "validate": validate_data
-    }
-
-    with open('dataset.json', 'w', encoding='utf-8') as file:
-        json.dump(dataset, file, indent=4, ensure_ascii=False)
+        with open(f'{pert_type}/{os.path.basename(file).split('.')[0]}_{pert_type}.json', 'w', encoding='utf-8') as f:
+            json.dump(dataset, f, indent=4, ensure_ascii=False)
