@@ -3,7 +3,6 @@ from collections import deque
 from string import punctuation
 from transformers import AutoTokenizer, AddedToken
 from numpy.random import default_rng
-import torch
 
 
 
@@ -65,10 +64,7 @@ def merge_part_tokens(words):
 
 
 def __affect_hop_word(word):
-    return word["feats"] and "Person=3" in word["feats"] \
-        and "Tense=Pres" in word["feats"] \
-        and "VerbForm=Fin" in word["feats"] \
-        and "Number" in word["feats"]
+    return ("AUX" in word['upos']) and ('VBZ' in word['xpos'] or 'VBP' in word['xpos'])
 
 
 def __perturb_hop_words(sent, num_hops, marker_sg, marker_pl):
@@ -120,9 +116,9 @@ def __perturb_hop_words_complete_hops(sent, num_hops, marker_sg, marker_pl):
 
             hop_completed.append(skipped_words == num_hops)
 
-            if "Number=Sing" in word["feats"]:
+            if "VBZ" in word['xpos']:
                 new_sent.insert(insert_index, marker_sg)
-            elif "Number=Plur" in word["feats"]:
+            elif "VBP" in word['xpos']:
                 new_sent.insert(insert_index, marker_pl)
             else:
                 raise Exception(
@@ -158,9 +154,9 @@ def __perturb_hop_tokens(sent, num_hops):
                 tokens = gpt2_hop_tokenizer.encode(
                     " " + sent_string) + tokens
 
-            if "Number=Sing" in word["feats"]:
+            if "VBZ" in word['xpos']:
                 tokens.insert(num_hops, marker_sg_token)
-            elif "Number=Plur" in word["feats"]:
+            elif "VBP" in word['xpos']:
                 tokens.insert(num_hops, marker_pl_token)
             else:
                 raise Exception(
@@ -174,8 +170,7 @@ def __perturb_hop_tokens(sent, num_hops):
 
     if len(new_sent) > 0:
         sent_string = " ".join(merge_part_tokens(new_sent))
-        tokens = gpt2_hop_tokenizer.encode(sent_string) + tokens
-    return tokens
+        return sent_string, sent["word_annotations"]
 
 
 def __perturb_reverse(sent, rng, reverse, full):
@@ -194,8 +189,7 @@ def __perturb_reverse(sent, rng, reverse, full):
         assert not reverse
         new_tokens.reverse()
 
-    return new_tokens
-
+    return gpt2_rev_tokenizer.decode(new_tokens), sent["sent_text"]
 
 def __perturb_shuffle_deterministic(sent, seed, shuffle):
     tokens = gpt2_original_tokenizer.encode(sent["sent_text"])
@@ -219,7 +213,7 @@ def __perturb_shuffle_local(sent, seed, window=5):
         default_rng(seed).shuffle(batch)
         shuffled_tokens += batch
 
-    return shuffled_tokens
+    return gpt2_rev_tokenizer.decode(shuffled_tokens) , sent["sent_text"]
 
 
 def __perturb_shuffle_even_odd(sent):
