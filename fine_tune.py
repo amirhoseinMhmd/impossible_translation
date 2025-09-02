@@ -44,22 +44,24 @@ def get_gpt2_tokenizer_with_markers():
     return tokenizer
 
 
-def preprocess(tokenizer):
+def preprocess(tokenizer, device):
     def tokenize(examples):
+        inputs = tokenizer( examples['perturbed_text'],
+            padding='max_length', truncation=True,
+            max_length=128, return_tensors="pt")
 
-        inputs = tokenizer(examples['perturbed_text'],
-                           padding='max_length', truncation=True,
-                           max_length=128, return_tensors=None)
-
-        labels = tokenizer(examples['original_text']
-                           , padding='max_length', truncation=True,
-                           max_length=128, return_tensors=None)['input_ids']
+        labels = tokenizer(examples['original_text'],
+            padding='max_length', truncation=True,
+            max_length=128, return_tensors="pt" )['input_ids']
 
         inputs['labels'] = labels
+
+        if device.type != 'cpu':
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+
         return inputs
 
     return tokenize
-
 
 class CustomTrainer(Trainer):
     def __init__(self, *args, **kwargs):
@@ -132,14 +134,14 @@ if __name__ == '__main__':
     model = GPT2LMHeadModel.from_pretrained('gpt2')
     model.to(device)
 
-    tokenize = preprocess(tokenizer)
+    tokenize = preprocess(tokenizer, device=device)
     dataset = data.map(tokenize, batched=True, remove_columns=['perturbed_text', 'original_text'])
 
     config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        target_modules=["c_attn"],
-        lora_dropout=0.05,
+        r=32,
+        lora_alpha=64,
+        target_modules=["c_attn", "c_proj"],
+        lora_dropout=0.1,
         bias="none",
         task_type="CAUSAL_LM",
         fan_in_fan_out=True
@@ -149,18 +151,26 @@ if __name__ == '__main__':
 
     training_args = TrainingArguments(
         output_dir="./gpt2-lora-translation",
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
+        per_device_train_batch_size=24,
+        per_device_eval_batch_size=24,
+        gradient_accumulation_steps=2,
         save_strategy="steps",
         logging_strategy="steps",
-        learning_rate=2e-4,
+        learning_rate=3e-4,
         num_train_epochs=3,
-        # save_steps=500,
-        logging_steps=100,
+        save_steps=300,
+        logging_steps=75,
         report_to="none",
         remove_unused_columns=False,
         label_smoothing_factor=0.1,
-        dataloader_pin_memory=False
+        dataloader_pin_memory=True,
+        dataloader_num_workers=2,
+        fp16=True,
+        warmup_steps=100,
+        weight_decay=0.01,
+        max_grad_norm=1.0,
+        optim="adamw_hf",
+        group_by_length=True,
     )
 
     trainer = CustomTrainer(
