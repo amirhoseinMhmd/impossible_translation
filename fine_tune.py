@@ -46,23 +46,27 @@ def get_gpt2_tokenizer_with_markers():
 
 def preprocess(tokenizer, device):
     def tokenize(examples):
-        inputs = tokenizer( examples['perturbed_text'],
-            padding='max_length', truncation=True,
-            max_length=128, return_tensors="pt")
-
-        labels = tokenizer(examples['original_text'],
-            padding='max_length', truncation=True,
-            max_length=128, return_tensors="pt" )['input_ids']
+        inputs = tokenizer(
+            examples['perturbed_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors="pt"
+        )
+        labels = tokenizer(
+            examples['original_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors="pt"
+        )['input_ids']
 
         inputs['labels'] = labels
 
-        if device.type != 'cpu':
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         return inputs
 
     return tokenize
-
 class CustomTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -134,10 +138,18 @@ if __name__ == '__main__':
     model = GPT2LMHeadModel.from_pretrained('gpt2')
     model.to(device)
 
-    tokenize = preprocess(tokenizer, device=device)
-    dataset = data.map(tokenize,batched=True,batch_size=2000,
-                       remove_columns=['perturbed_text', 'original_text'],
-                       num_proc=8,load_from_cache_file=True)
+    tokenize = preprocess(tokenizer, device)
+
+    dataset = data.map(
+        tokenize,
+        batched=True,
+        batch_size=2000,
+        remove_columns=['perturbed_text', 'original_text'],
+        num_proc=None,
+        load_from_cache_file=True,
+        desc="Tokenizing dataset"
+    )
+
     config = LoraConfig(
         r=32,
         lora_alpha=64,
