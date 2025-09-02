@@ -135,8 +135,9 @@ if __name__ == '__main__':
     model.to(device)
 
     tokenize = preprocess(tokenizer, device=device)
-    dataset = data.map(tokenize, batched=True, remove_columns=['perturbed_text', 'original_text'])
-
+    dataset = data.map(tokenize,batched=True,batch_size=2000,
+                       remove_columns=['perturbed_text', 'original_text'],
+                       num_proc=8,load_from_cache_file=True)
     config = LoraConfig(
         r=32,
         lora_alpha=64,
