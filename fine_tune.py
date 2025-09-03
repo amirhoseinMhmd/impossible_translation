@@ -133,10 +133,25 @@ if __name__ == '__main__':
                         help="Path to file")
     parser.add_argument('-c', '--config', type=str, required=True,
                         help="Path to YAML configuration file")
+    parser.add_argument('-t', '--type', type=str, required=True,
+                        help="Type of perturbation")
     args = parser.parse_args()
     config = load_configs(args.config)
+    perturb_type = args.type
 
+    tokenizer = None
+
+    if perturb_type == 'hop':
+        tokenizer = utils.gpt2_hop_tokenizer
+    elif perturb_type == 'reverse':
+        tokenizer = utils.gpt2_rev_tokenizer
+    elif perturb_type == 'shuffle':
+        tokenizer = utils.gpt2_original_tokenizer
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = GPT2LMHeadModel.from_pretrained('gpt2')
+    model.resize_token_embeddings(len(tokenizer))
     print(f"Moving model to {device}...")
     model.to(device)
     print(f"Model is now on: {next(model.parameters()).device}")
