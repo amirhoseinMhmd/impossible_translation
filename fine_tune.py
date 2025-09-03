@@ -7,8 +7,11 @@ import torch
 from datasets import Dataset, DatasetDict, load_from_disk
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AddedToken, AutoModelForSeq2SeqLM
 from peft import LoraConfig, get_peft_model
+import torch.multiprocessing as mp
 
 import utils
+
+mp.set_start_method('spawn', force=True)
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -19,6 +22,7 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 print(f"Using device: {device}")
+
 
 def load_dataset(path):
     with open(path, 'r', encoding='utf-8') as f:
@@ -70,6 +74,8 @@ def preprocess(tokenizer, device):
         return inputs
 
     return tokenize
+
+
 class CustomTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -113,10 +119,12 @@ class CustomTrainer(Trainer):
 
         return super().on_epoch_end(args, state, control, **kwargs)
 
+
 def load_configs(config_path):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
     return config
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
