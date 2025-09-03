@@ -3,7 +3,7 @@ import json
 
 import matplotlib.pyplot as plt
 import torch
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, load_from_disk
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AddedToken, AutoModelForSeq2SeqLM
 from peft import LoraConfig, get_peft_model
 
@@ -116,39 +116,40 @@ if __name__ == '__main__':
 
     parser.add_argument('-p', '--path', type=str, required=True,
                         help="Path to file")
-    parser.add_argument('-t', '--type', type=str, required=True,
-                        help="Type of perturbation")
+    # parser.add_argument('-t', '--type', type=str, required=True,
+    #                     help="Type of perturbation")
     args = parser.parse_args()
 
     data = load_dataset(args.path)
-    perturb_type = args.type
+    # perturb_type = args.types
 
-    tokenizer = None
+    # tokenizer = None
 
-    if perturb_type == 'hop':
-        tokenizer = utils.gpt2_hop_tokenizer
-    elif perturb_type == 'reverse':
-        tokenizer = utils.gpt2_rev_tokenizer
-    elif perturb_type == 'shuffle':
-        tokenizer = utils.gpt2_original_tokenizer
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # if perturb_type == 'hop':
+    #     tokenizer = utils.gpt2_hop_tokenizer
+    # elif perturb_type == 'reverse':
+    #     tokenizer = utils.gpt2_rev_tokenizer
+    # elif perturb_type == 'shuffle':
+    #     tokenizer = utils.gpt2_original_tokenizer
+    #
+    # if tokenizer.pad_token is None:
+    #     tokenizer.pad_token = tokenizer.eos_token
 
     model = GPT2LMHeadModel.from_pretrained('gpt2')
     model.to(device)
 
-    tokenize = preprocess(tokenizer, device)
-
-    dataset = data.map(
-        tokenize,
-        batched=True,
-        batch_size=2000,
-        remove_columns=['perturbed_text', 'original_text'],
-        num_proc=None,
-        load_from_cache_file=True,
-        desc="Tokenizing dataset"
-    )
+    # tokenize = preprocess(tokenizer, device)
+    #
+    # dataset = data.map(
+    #     tokenize,
+    #     batched=True,
+    #     batch_size=2000,
+    #     remove_columns=['perturbed_text', 'original_text'],
+    #     num_proc=None,
+    #     load_from_cache_file=True,
+    #     desc="Tokenizing dataset"
+    # )
+    dataset = load_from_disk(args.path)
 
     config = LoraConfig(
         r=32,
@@ -196,4 +197,4 @@ if __name__ == '__main__':
     trainer.train()
     model = model.merge_and_unload()
     model.save_pretrained('./fine_tuned_model')
-    tokenizer.save_pretrained('./fine_tuned_model')
+    # tokenizer.save_pretrained('./fine_tuned_model')
