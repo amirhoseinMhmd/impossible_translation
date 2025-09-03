@@ -183,7 +183,7 @@ if __name__ == '__main__':
         warmup_steps=100,
         weight_decay=0.01,
         max_grad_norm=1.0,
-        optim="adamw_hf",
+        optim="adamw_torch",
         group_by_length=True,
     )
 
