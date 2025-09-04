@@ -1,17 +1,42 @@
-from datasets import load_dataset
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AutoTokenizer, AddedToken
-from datasets import Dataset, DatasetDict
-from sklearn.model_selection import train_test_split
-import torch
+import argparse
 import json
+import yaml
+
 import matplotlib.pyplot as plt
+import torch
+from datasets import Dataset, DatasetDict, load_from_disk
+from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AddedToken, AutoModelForSeq2SeqLM
+from peft import LoraConfig, get_peft_model
+import torch.multiprocessing as mp
 
 import utils
 
-DATASET_PATH = 'dataset.json'
+mp.set_start_method('spawn', force=True)
 
-with open(DATASET_PATH, 'r', encoding='utf-8') as f:
-    data = json.load(f)
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+    torch.cuda.set_device(0)
+    torch.cuda.empty_cache()
+else:
+    device = torch.device("cpu")
+print(f"Using device: {device}")
+
+
+def load_dataset(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    train_dataset = Dataset.from_list(data["train"])
+    valid_dataset = Dataset.from_list(data["validation"])
+
+    dataset = DatasetDict({
+        "train": train_dataset,
+        "validation": valid_dataset
+    })
+
+    return dataset
 
 
 def get_gpt2_tokenizer_with_markers():
@@ -26,11 +51,29 @@ def get_gpt2_tokenizer_with_markers():
     return tokenizer
 
 
-def tokenize_function(examples):
-   inputs = tokenizer(examples['perturbed_text'], padding='max_length', truncation=True, max_length=128)
-   labels = tokenizer(examples['original_text'], padding='max_length', truncation=True, max_length=128)['input_ids']
-   inputs['labels'] = labels
-   return inputs
+def preprocess(tokenizer, device):
+    def tokenize(examples):
+        inputs = tokenizer(
+            examples['perturbed_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors="pt"
+        )
+        labels = tokenizer(
+            examples['original_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors="pt"
+        )['input_ids']
+
+        inputs['labels'] = labels
+
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        return inputs
+
+    return tokenize
 
 
 class CustomTrainer(Trainer):
@@ -77,43 +120,61 @@ class CustomTrainer(Trainer):
         return super().on_epoch_end(args, state, control, **kwargs)
 
 
-if __name__ == '__main__':
+def load_configs(config_path):
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    return config
 
-    tokenizer = get_gpt2_tokenizer_with_markers()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-p', '--path', type=str, required=True,
+                        help="Path to file")
+    parser.add_argument('-c', '--config', type=str, required=True,
+                        help="Path to YAML configuration file")
+    parser.add_argument('-t', '--type', type=str, required=True,
+                        help="Type of perturbation")
+    args = parser.parse_args()
+    config = load_configs(args.config)
+    perturb_type = args.type
+
+    tokenizer = None
+
+    if perturb_type == 'hop':
+        tokenizer = utils.gpt2_hop_tokenizer
+    elif perturb_type == 'reverse':
+        tokenizer = utils.gpt2_rev_tokenizer
+    elif perturb_type == 'shuffle':
+        tokenizer = utils.gpt2_original_tokenizer
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = GPT2LMHeadModel.from_pretrained('gpt2')
     model.resize_token_embeddings(len(tokenizer))
+    print(f"Moving model to {device}...")
+    model.to(device)
+    print(f"Model is now on: {next(model.parameters()).device}")
 
+    dataset = load_from_disk(args.path)
+    print(f"Dataset columns: {dataset['train'].column_names}")
 
-    train_data = Dataset.from_list(data['train']).map(tokenize_function, batched=True)
-    validate_data = Dataset.from_list(data['validate']).map(tokenize_function, batched=True)
+    print("Applying LoRA...")
+    lora_config = config.get('lora_config', {})
+    model = get_peft_model(model, LoraConfig(**lora_config))
+    print(f"Model device after PEFT: {next(model.parameters()).device}")
 
-    dataset = DatasetDict({
-        'train': train_data,
-        'validate': validate_data
-    })
-
-    tokenized_datasets = dataset.map(tokenize_function, batched=True)
-
-    training_args = TrainingArguments(
-        output_dir='./results',
-        num_train_epochs=5,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        logging_dir='./logs',
-        logging_steps=10,
-        evaluation_strategy='epoch',
-        save_strategy='epoch',
-        load_best_model_at_end=True,
-        fp16=True,
-    )
+    training_config = config.get('training_arguments', {})
+    training_args = TrainingArguments(**training_config)
+    print(f"Training arguments device: {training_args.device}")
 
     trainer = CustomTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset['train'],
-        eval_dataset=dataset['validate']
+        eval_dataset=dataset['validation']
     )
 
     trainer.train()
+    model = model.merge_and_unload()
     model.save_pretrained('./fine_tuned_model')
-    tokenizer.save_pretrained('./fine_tuned_model')
