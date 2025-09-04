@@ -1,8 +1,8 @@
 training_arguments:
   output_dir: "./gpt2-lora-translation"
   per_device_train_batch_size: 128
-  per_device_eval_batch_size: 128
-  gradient_accumulation_steps: 4
+  per_device_eval_batch_size: 32
+  gradient_accumulation_steps: 16
   logging_strategy: "steps"
   eval_strategy: "steps"
   learning_rate: 5.0e-4
@@ -20,7 +20,7 @@ training_arguments:
   weight_decay: 0.01
   max_grad_norm: 1.0
   optim: "adamw_torch_fused"
-  group_by_length: true
+  group_by_length: false
   label_names: ["labels"]
   use_cpu: false
   tf32: true
