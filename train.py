@@ -5,13 +5,9 @@ import yaml
 import matplotlib.pyplot as plt
 import torch
 from datasets import Dataset, DatasetDict, load_from_disk
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AddedToken, AutoModelForSeq2SeqLM
-from peft import LoraConfig, get_peft_model
-import torch.multiprocessing as mp
+from transformers import  GPT2LMHeadModel, GPT2Config, TrainingArguments, Trainer, AddedToken
 
 import utils
-
-mp.set_start_method('spawn', force=True)
 
 if torch.backends.mps.is_available():
     device = torch.device("mps")
@@ -22,7 +18,6 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 print(f"Using device: {device}")
-
 
 def load_dataset(path):
     with open(path, 'r', encoding='utf-8') as f:
@@ -37,8 +32,6 @@ def load_dataset(path):
     })
 
     return dataset
-
-
 class CustomTrainer(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -83,6 +76,43 @@ class CustomTrainer(Trainer):
         return super().on_epoch_end(args, state, control, **kwargs)
 
 
+
+def create_gpt_from_scratch(config, vocab_size):
+    model_config = GPT2Config(
+        vocab_size=vocab_size,
+        n_positions=config.get('n_positions', 1024),  # Context length
+        n_embd=config.get('n_embd', 768),  # Embedding dimension
+        n_layer=config.get('n_layer', 12),  # Number of transformer layers
+        n_head=config.get('n_head', 12),  # Number of attention heads
+        n_inner=config.get('n_inner', 3072),  # Feed-forward dimension
+        activation_function=config.get('activation_function', 'gelu_new'),
+        resid_pdrop=config.get('resid_pdrop', 0.1),
+        embd_pdrop=config.get('embd_pdrop', 0.1),
+        attn_pdrop=config.get('attn_pdrop', 0.1),
+        layer_norm_epsilon=config.get('layer_norm_epsilon', 1e-5),
+        initializer_range=config.get('initializer_range', 0.02),
+        summary_type=config.get('summary_type', 'cls_index'),
+        summary_use_proj=config.get('summary_use_proj', True),
+        summary_activation=config.get('summary_activation', None),
+        summary_proj_to_labels=config.get('summary_proj_to_labels', True),
+        summary_first_dropout=config.get('summary_first_dropout', 0.1),
+        use_cache=config.get('use_cache', True),
+        bos_token_id=config.get('bos_token_id', 50256),
+        eos_token_id=config.get('eos_token_id', 50256),
+    )
+
+    print(f"Creating model from scratch with configuration:")
+    print(f"  - Vocab size: {vocab_size}")
+    print(f"  - Embedding dimension: {model_config.n_embd}")
+    print(f"  - Number of layers: {model_config.n_layer}")
+    print(f"  - Number of attention heads: {model_config.n_head}")
+    print(f"  - Context length: {model_config.n_positions}")
+
+    model = GPT2LMHeadModel(config=model_config)
+    model.apply(model._init_weights)
+
+    return model
+
 def load_configs(config_path):
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
@@ -98,12 +128,13 @@ if __name__ == '__main__':
                         help="Path to YAML configuration file")
     parser.add_argument('-t', '--type', type=str, required=True,
                         help="Type of perturbation")
+
     args = parser.parse_args()
-    config = load_configs(args.config)
+
+    configs = load_configs(args.config)
     perturb_type = args.type
-
     tokenizer = None
-
+    print(f'hiiii {perturb_type}')
     if perturb_type == 'hop':
         tokenizer = utils.gpt2_hop_tokenizer
     elif perturb_type == 'reverse':
@@ -113,23 +144,15 @@ if __name__ == '__main__':
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = GPT2LMHeadModel.from_pretrained('gpt2')
-    model.resize_token_embeddings(len(tokenizer))
-    print(f"Moving model to {device}...")
+
+    vocab_size = len(tokenizer)
+
+    model = create_gpt_from_scratch(configs.get('model_config', {}), vocab_size)
     model.to(device)
-    print(f"Model is now on: {next(model.parameters()).device}")
 
     dataset = load_from_disk(args.path)
-    print(f"Dataset columns: {dataset['train'].column_names}")
 
-    print("Applying LoRA...")
-    lora_config = config.get('lora_config', {})
-    model = get_peft_model(model, LoraConfig(**lora_config))
-    print(f"Model device after PEFT: {next(model.parameters()).device}")
-
-    training_config = config.get('training_arguments', {})
-    training_args = TrainingArguments(**training_config)
-    print(f"Training arguments device: {training_args.device}")
+    training_args = TrainingArguments(**configs.get('training_arguments', {}))
 
     trainer = CustomTrainer(
         model=model,

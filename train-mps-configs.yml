@@ -1,0 +1,69 @@
+# Configuration for training GPT-2 from scratch
+
+# Model architecture configuration
+model_config:
+  n_positions: 1024      # Maximum sequence length / context window
+  n_embd: 768           # Embedding dimension (768 for GPT-2 small, 1024 for medium, 1280 for large)
+  n_layer: 12           # Number of transformer layers (12 for small, 24 for medium, 36 for large)
+  n_head: 12            # Number of attention heads (must divide n_embd evenly)
+  n_inner: 3072         # Feed-forward network dimension (typically 4 * n_embd)
+  activation_function: "gelu_new"
+  resid_pdrop: 0.1      # Residual dropout
+  embd_pdrop: 0.1       # Embedding dropout
+  attn_pdrop: 0.1       # Attention dropout
+  layer_norm_epsilon: 0.00001
+  initializer_range: 0.02
+  use_cache: False
+  bos_token_id: 50256
+  eos_token_id: 50256
+
+# Training arguments
+training_arguments:
+  output_dir: './results'
+  overwrite_output_dir: true
+
+  # Learning rate and optimization
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 0.00000001
+  max_grad_norm: 1.0
+
+  # Batch size and accumulation
+  per_device_train_batch_size: 8
+  per_device_eval_batch_size: 8
+  gradient_accumulation_steps: 4
+
+  # Training schedule
+  num_train_epochs: 10
+  warmup_steps: 1000
+  lr_scheduler_type: "cosine"
+
+  # Evaluation and saving
+  eval_strategy: "steps"
+  eval_steps: 1000
+  save_strategy: "steps"
+  save_steps: 1000
+  save_total_limit: 5
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Logging
+  logging_strategy: "steps"
+  logging_steps: 100
+  logging_dir: './logs'
+
+  # Memory optimization
+  gradient_checkpointing: true
+  dataloader_pin_memory: false
+  dataloader_num_workers: 4
+#  fp16: true
+
+  seed: 42
+  data_seed: 42
+  remove_unused_columns: false
+  prediction_loss_only: false
+#  early_stopping_patience: 3
+#  early_stopping_threshold: 0.001
