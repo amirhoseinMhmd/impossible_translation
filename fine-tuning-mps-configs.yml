@@ -14,7 +14,7 @@ training_arguments:
   label_smoothing_factor: 0.1
   dataloader_pin_memory: true
   dataloader_num_workers: 2
-  fp16: true
+  fp16: false
   warmup_steps: 100
   weight_decay: 0.01
   max_grad_norm: 1.0

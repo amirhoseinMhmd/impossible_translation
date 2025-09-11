@@ -1,13 +1,13 @@
 import argparse
 import json
-import yaml
 
 import matplotlib.pyplot as plt
 import torch
-from datasets import Dataset, DatasetDict, load_from_disk
-from transformers import GPT2Tokenizer, GPT2LMHeadModel, TrainingArguments, Trainer, AddedToken, AutoModelForSeq2SeqLM
-from peft import LoraConfig, get_peft_model
 import torch.multiprocessing as mp
+import yaml
+from datasets import Dataset, DatasetDict, load_from_disk
+from peft import LoraConfig, get_peft_model
+from transformers import GPT2LMHeadModel, TrainingArguments, Trainer
 
 import utils
 
@@ -92,6 +92,7 @@ def load_configs(config_path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-m', '--model', type=str, required=True,)
     parser.add_argument('-p', '--path', type=str, required=True,
                         help="Path to file")
     parser.add_argument('-c', '--config', type=str, required=True,
@@ -113,7 +114,7 @@ if __name__ == '__main__':
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = GPT2LMHeadModel.from_pretrained('gpt2')
+    model = GPT2LMHeadModel.from_pretrained(args.model)
     model.resize_token_embeddings(len(tokenizer))
     print(f"Moving model to {device}...")
     model.to(device)
