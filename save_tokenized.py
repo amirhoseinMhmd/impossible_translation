@@ -5,40 +5,27 @@ import os
 from datasets import Dataset, DatasetDict
 import utils
 
-def preprocess(tokenizer, max_length=128):
+def preprocess(tokenizer):
     def tokenize(examples):
-        input_ids_list = []
-        label_ids_list = []
+        inputs = tokenizer(
+            examples['perturbed_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors=None
+        )
+        labels = tokenizer(
+            examples['original_text'],
+            padding='max_length',
+            truncation=True,
+            max_length=128,
+            return_tensors=None
+        )['input_ids']
 
-        for src, tgt in zip(examples["perturbed_text"], examples["original_text"]):
-            # Build "source + EOS + target"
-            combined = src + tokenizer.eos_token + tgt
-            tokenized = tokenizer(
-                combined,
-                padding="max_length",
-                truncation=True,
-                max_length=max_length
-            )
-
-            input_ids = tokenized["input_ids"]
-
-            labels = input_ids.copy()
-
-            src_ids = tokenizer(src + tokenizer.eos_token, max_length=max_length, truncation=True)["input_ids"]
-            labels[:len(src_ids)] = [-100] * len(src_ids)
-
-            input_ids_list.append(input_ids)
-            label_ids_list.append(labels)
-
-        return {
-            "input_ids": input_ids_list,
-            "attention_mask": [tokenizer.get_attention_mask(ids, max_length=max_length) for ids in input_ids_list]
-                if hasattr(tokenizer, "get_attention_mask") else None,
-            "labels": label_ids_list
-        }
+        inputs['labels'] = labels
+        return inputs
 
     return tokenize
-
 
 
 def load_dataset(path):
@@ -46,7 +33,7 @@ def load_dataset(path):
         data = json.load(f)
 
     train_dataset = Dataset.from_list(data["train"])
-    valid_dataset = Dataset.from_list(data["validation"])
+    valid_dataset = Dataset.from_list(data["validate"])
 
     dataset = DatasetDict({
         "train": train_dataset,
