@@ -1,12 +1,13 @@
 training_arguments:
-  output_dir: "./gpt2-lora-translation"
+  output_dir: "./partial-reverse-models"
+  logging_dir: "./partial-reverse-logs"
   per_device_train_batch_size: 128
   per_device_eval_batch_size: 32
   gradient_accumulation_steps: 16
   logging_strategy: "steps"
   eval_strategy: "steps"
-  learning_rate: 5.0e-4
-  num_train_epochs: 3
+  learning_rate: 2.0e-5
+  num_train_epochs: 12
   save_steps: 5000
   eval_steps: 2500
   logging_steps: 500
@@ -25,9 +26,8 @@ training_arguments:
   use_cpu: false
   tf32: true
   dataloader_persistent_workers: true
-  max_steps: 66406
+  max_steps: -1
   lr_scheduler_type: "cosine"
-  save_total_limit: 3
   load_best_model_at_end: true
   metric_for_best_model: "eval_loss"
   greater_is_better: false
@@ -40,3 +40,4 @@ lora_config:
   bias: "none"
   task_type: "CAUSAL_LM"
   fan_in_fan_out: true
+~
