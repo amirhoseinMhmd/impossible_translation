@@ -9,8 +9,13 @@ from transformers import (
     TrainingArguments,
     DataCollatorForLanguageModeling
 )
+import yaml
 from datasets import Dataset
 
+def load_configs(config_path):
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    return config
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -134,13 +139,9 @@ def prepare_dataset(training_data, tokenizer, train_split=0.9):
 def train_model(
         train_dataset,
         eval_dataset,
+        config,
         model_name,
         output_dir='./gpt2-reversal',
-        num_epochs=3,
-        batch_size=4,
-        learning_rate=5e-5,
-        save_steps=500,
-
 ):
     # Load model and tokenizer
     tokenizer = GPT2Tokenizer.from_pretrained(model_name)
@@ -156,31 +157,28 @@ def train_model(
         mlm=False  # GPT-2 uses causal language modeling, not masked LM
     )
 
-    # Determine if we should use fp16 (not supported on MPS)
-    use_fp16 = torch.cuda.is_available()
-
-    # Training arguments
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
-        learning_rate=learning_rate,
-        warmup_steps=100,
-        weight_decay=0.01,
-        logging_dir=f'{output_dir}/logs',
-        logging_steps=100,
-        save_steps=save_steps,
-        save_total_limit=-1,
-        eval_strategy="steps",
-        eval_steps=500,
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",
-        fp16=use_fp16,  # Only use fp16 on CUDA
-        use_cpu=False,
-        no_cuda=not torch.cuda.is_available(),  # Disable CUDA if not available
-    )
-
+    training_config = config.get('training_arguments', {})
+    training_args = TrainingArguments(**training_config)
+    # training_args = TrainingArguments(
+    #     output_dir=output_dir,
+    #     num_train_epochs=num_epochs,
+    #     per_device_train_batch_size=batch_size,
+    #     per_device_eval_batch_size=batch_size,
+    #     learning_rate=learning_rate,
+    #     warmup_steps=100,
+    #     weight_decay=0.01,
+    #     logging_dir=f'{output_dir}/logs',
+    #     logging_steps=100,
+    #     save_steps=save_steps,
+    #     save_total_limit=-1,
+    #     eval_strategy="steps",
+    #     eval_steps=500,
+    #     load_best_model_at_end=True,
+    #     metric_for_best_model="eval_loss",
+    #     fp16=use_fp16,  # Only use fp16 on CUDA
+    #     use_cpu=False,
+    #     no_cuda=not torch.cuda.is_available(),  # Disable CUDA if not available
+    # )
     # Initialize trainer
     trainer = Trainer(
         model=model,
@@ -279,7 +277,7 @@ def test_model(model_path, test_examples):
 # 4. MAIN EXECUTION
 # ============================================================================
 
-def main(input_file='input_sentences.txt', model_name='mission-impossible-lms/partial-reverse-gpt2'):
+def main(config, input_file='input_sentences.txt', model_name='mission-impossible-lms/partial-reverse-gpt2'):
     """
     Main training pipeline.
 
@@ -344,8 +342,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         input_file = sys.argv[1]
         model_name = sys.argv[2]
+        config_path = sys.argv[3]
     else:
         input_file = 'input_sentences.txt'
         model_name = 'mission-impossible-lms/partial-reverse-gpt2'
+        config_path = 'config.yaml'
 
-    main(input_file, model_name)
+    config = load_configs(config_path)
+    main(input_file, model_name, config)
