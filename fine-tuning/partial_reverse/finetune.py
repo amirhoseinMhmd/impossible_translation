@@ -228,3 +228,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = load_configs(args.config)
 
+    main(config=config, input_file=args.path, model_name=args.model)
