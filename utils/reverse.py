@@ -1,7 +1,17 @@
 from transformers import GPT2Tokenizer
 import random
+from multiprocessing import Pool, cpu_count
+from typing import List
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+tokenizer = None
+
+def _init_tokenizer():
+    global tokenizer
+    if tokenizer is None:
+        tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+        tokenizer.pad_token = tokenizer.eos_token
+
+_init_tokenizer()
 
 REVERSE_MARKER = '🅁'
 
@@ -60,6 +70,70 @@ def full_reverse(text: str) -> str:
     tokens_reversed = tokens[::-1]
 
     return ' '.join(tokens_reversed).replace('  ', ' ')
+
+def _process_chunk_partial_reverse_batched(args):
+    chunk, batch_size = args
+    results = []
+    for i in range(0, len(chunk), batch_size):
+        batch = chunk[i:i + batch_size]
+        results.extend(partial_reverse_batch(batch))
+    return results
+
+def _chunk_list(lst: List, n_chunks: int) -> List[List]:
+    chunk_size = len(lst) // n_chunks + (1 if len(lst) % n_chunks else 0)
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
+def partial_reverse_batch(texts: List[str]) -> List[str]:
+    random.seed(42)
+    texts = [t.strip() for t in texts]
+
+    encoded = tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
+    input_ids = encoded['input_ids']
+    attention_mask = encoded['attention_mask']
+
+    results = []
+    for i in range(len(texts)):
+        mask = attention_mask[i].bool()
+        token_ids = input_ids[i][mask].tolist()
+        tokens = [tokenizer.decode([tid]) for tid in token_ids]
+
+        if len(tokens) < 3:
+            results.append(None)
+            continue
+
+        insert_pos = random.randint(0, len(tokens) - 2)
+        before = tokens[:insert_pos]
+        after = tokens[insert_pos:]
+        after_reversed = after[::-1]
+
+        result = before + [REVERSE_MARKER] + after_reversed
+        results.append(' '.join(result).replace('  ', ' '))
+
+    return results
+
+def partial_reverse_fast(texts: List[str], batch_size: int = 128, n_workers: int = None) -> List[str]:
+    if n_workers is None:
+        n_workers = max(1, cpu_count() - 1)
+
+    if len(texts) < 500:
+        return partial_reverse_batch(texts)
+
+    chunks = _chunk_list(texts, n_workers)
+    chunk_args = [(chunk, batch_size) for chunk in chunks]
+
+    with Pool(n_workers) as pool:
+        results_nested = pool.map(_process_chunk_partial_reverse_batched, chunk_args)
+
+    results = []
+    for chunk_results in results_nested:
+        results.extend(chunk_results)
+
+    return results
+
+def partial_reverse_in_batch(texts: List[str], batch_size: int = 128, n_workers: int = None) -> List[tuple]:
+    originals = [t.strip() for t in texts]
+    corrupted = partial_reverse_fast(texts, batch_size, n_workers)
+    return list(zip(corrupted, originals))
 
 
 # Example usage

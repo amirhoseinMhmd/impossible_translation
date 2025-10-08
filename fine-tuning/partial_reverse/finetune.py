@@ -15,7 +15,7 @@ import yaml
 from datasets import Dataset
 import argparse
 from tqdm import tqdm
-from utils.reverse import partial_reverse
+from utils.reverse import partial_reverse_in_batch
 
 
 def load_configs(config_path):
@@ -37,6 +37,7 @@ def get_device():
 
 DEVICE = get_device()
 
+
 def load_sentences_from_file(input_file):
     sentences = []
 
@@ -56,16 +57,9 @@ def load_sentences_from_file(input_file):
     return sentences
 
 
-def generate_training_data(input_file, marker='🅁'):
-    training_data = []
-
+def generate_training_data(input_file):
     sentences = load_sentences_from_file(input_file)
-
-    for sentence in sentences:
-        example = partial_reverse(sentence)
-        if example:
-            training_data.append((example, sentences))
-
+    training_data = partial_reverse_in_batch(sentences, 512)
     return training_data
 
 
@@ -77,7 +71,6 @@ def save_dataset(data, output_file='training_data.json'):
 
 
 def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128):
-
     # Split into train and eval
     split_idx = int(len(training_data) * train_split)
     train_data = training_data[:split_idx]
@@ -196,8 +189,7 @@ def main(config, input_file='input_sentences.txt', model_name='gpt2'):
     # Step 1: Generate training data from input file
     print(f"Reading sentences from {input_file}...")
     training_data = generate_training_data(
-        input_file=input_file,
-        marker=MARKER)
+        input_file=input_file)
 
     # Optionally save the dataset
     # save_dataset(training_data, 'training_data.json')
@@ -225,15 +217,18 @@ def main(config, input_file='input_sentences.txt', model_name='gpt2'):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    # parser = argparse.ArgumentParser()
+    #
+    # parser.add_argument('-m', '--model', type=str, required=True,
+    #                     help="Model name or path (e.g., 'gpt2', 'gpt2-medium')")
+    # parser.add_argument('-p', '--path', type=str, required=True,
+    #                     help="Path to input sentences file")
+    # parser.add_argument('-c', '--config', type=str, required=True,
+    #                     help="Path to YAML configuration file")
+    # args = parser.parse_args()
+    # config = load_configs(args.config)
 
-    parser.add_argument('-m', '--model', type=str, required=True,
-                        help="Model name or path (e.g., 'gpt2', 'gpt2-medium')")
-    parser.add_argument('-p', '--path', type=str, required=True,
-                        help="Path to input sentences file")
-    parser.add_argument('-c', '--config', type=str, required=True,
-                        help="Path to YAML configuration file")
-    args = parser.parse_args()
-    config = load_configs(args.config)
-
-    main(config=config, input_file=args.path, model_name=args.model)
+    config = load_configs('/Users/Moham076/PycharmProjects/gpt_noise_elimination/configs/train-mps-configs.yml')
+    path = '/Users/Moham076/PycharmProjects/gpt_noise_elimination/10k_bnc_spoken.train'
+    model = 'mission-impossible-lms/partial-reverse-gpt2'
+    main(config=config, input_file=path, model_name=model)
