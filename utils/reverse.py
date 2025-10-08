@@ -1,14 +1,13 @@
-import spacy
+from transformers import GPT2Tokenizer
 import random
 
-nlp = spacy.load("en_core_web_trf")
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
 REVERSE_MARKER = '🅁'
 
-def noreverse(text: str, seed: int = 42) -> str:
-    random.seed(seed)
-    doc = nlp(text)
-    tokens = [token.text for token in doc]
+def noreverse(text: str) -> str:
+    token_ids = tokenizer.encode(text)
+    tokens = [tokenizer.decode([tid]) for tid in token_ids]
 
     if len(tokens) == 0:
         return text
@@ -17,13 +16,12 @@ def noreverse(text: str, seed: int = 42) -> str:
     insert_pos = random.randint(1, len(tokens))
     tokens.insert(insert_pos, REVERSE_MARKER)
 
-    return ' '.join(tokens)
+    return ''.join(tokens)
 
 
-def partialreverse(text: str, seed: int = 42) -> str:
-    random.seed(seed)
-    doc = nlp(text)
-    tokens = [token.text for token in doc]
+def partial_reverse(text: str) -> str:
+    token_ids = tokenizer.encode(text)
+    tokens = [tokenizer.decode([tid]) for tid in token_ids]
 
     if len(tokens) == 0:
         return text
@@ -31,7 +29,7 @@ def partialreverse(text: str, seed: int = 42) -> str:
     # Insert 🅁 at a random position
     insert_pos = random.randint(1, len(tokens))
 
-    # Split tokens into before and after R
+    # Split tokens
     before = tokens[:insert_pos]
     after = tokens[insert_pos:]
 
@@ -40,13 +38,12 @@ def partialreverse(text: str, seed: int = 42) -> str:
 
     result = before + [REVERSE_MARKER] + after_reversed
 
-    return ' '.join(result)
+    return ''.join(result)
 
 
-def fullreverse(text: str, seed: int = 42) -> str:
-    random.seed(seed)
-    doc = nlp(text)
-    tokens = [token.text for token in doc]
+def full_reverse(text: str) -> str:
+    token_ids = tokenizer.encode(text)
+    tokens = [tokenizer.decode([tid]) for tid in token_ids]
 
     if len(tokens) == 0:
         return text
@@ -58,7 +55,7 @@ def fullreverse(text: str, seed: int = 42) -> str:
     # Reverse all tokens
     tokens_reversed = tokens[::-1]
 
-    return ' '.join(tokens_reversed)
+    return ''.join(tokens_reversed)
 
 
 # Example usage
@@ -72,22 +69,22 @@ if __name__ == "__main__":
     print("Example 1:")
     print("Original:       ", text1)
     print("NOREVERSE:      ", noreverse(text1))
-    print("PARTIALREVERSE: ", partialreverse(text1))
-    print("FULLREVERSE:    ", fullreverse(text1))
+    print("PARTIALREVERSE: ", partial_reverse(text1))
+    print("FULLREVERSE:    ", full_reverse(text1))
 
     print("\n" + "=" * 60)
     print("Example 2:")
     print("Original:       ", text2)
     print("NOREVERSE:      ", noreverse(text2))
-    print("PARTIALREVERSE: ", partialreverse(text2))
-    print("FULLREVERSE:    ", fullreverse(text2))
+    print("PARTIALREVERSE: ", partial_reverse(text2))
+    print("FULLREVERSE:    ", full_reverse(text2))
 
     print("\n" + "=" * 60)
     print("Example 3:")
     print("Original:       ", text3)
     print("NOREVERSE:      ", noreverse(text3))
-    print("PARTIALREVERSE: ", partialreverse(text3))
-    print("FULLREVERSE:    ", fullreverse(text3))
+    print("PARTIALREVERSE: ", partial_reverse(text3))
+    print("FULLREVERSE:    ", full_reverse(text3))
 
     # Multi-sentence example
     print("\n" + "=" * 60)
@@ -95,14 +92,5 @@ if __name__ == "__main__":
     text4 = "He walks quickly. She runs faster."
     print("Original:       ", text4)
     print("NOREVERSE:      ", noreverse(text4))
-    print("PARTIALREVERSE: ", partialreverse(text4))
-    print("FULLREVERSE:    ", fullreverse(text4))
-
-    # Demonstrate different seeds
-    print("\n" + "=" * 60)
-    print("Different seeds for same text:")
-    for s in [10, 20, 30]:
-        print(f"\nSeed {s}:")
-        print("  NOREVERSE:      ", noreverse(text1, seed=s))
-        print("  PARTIALREVERSE: ", partialreverse(text1, seed=s))
-        print("  FULLREVERSE:    ", fullreverse(text1, seed=s))
+    print("PARTIALREVERSE: ", partial_reverse(text4))
+    print("FULLREVERSE:    ", full_reverse(text4))
