@@ -1,4 +1,3 @@
-import random
 import json
 from pathlib import Path
 import torch
@@ -11,6 +10,7 @@ from transformers import (
 import yaml
 from datasets import Dataset
 import argparse
+from utils.reverse import partial_reverse
 
 
 def load_configs(config_path):
@@ -31,25 +31,6 @@ def get_device():
 
 
 DEVICE = get_device()
-
-
-def create_reversal_example(text, marker='🅁'):
-    tokens = text.split()
-    if len(tokens) < 3:
-        return None
-
-    # Choose random split point (not at the very end)
-    split_idx = random.randint(1, len(tokens) - 2)
-
-    before = tokens[:split_idx]
-    after = tokens[split_idx:]
-
-    # Create corrupted version with marker and reversed tokens
-    corrupted = ' '.join(before) + marker + ' ' + ' '.join(reversed(after))
-    original = text
-
-    return corrupted, original
-
 
 def load_sentences_from_file(input_file):
     sentences = []
@@ -76,7 +57,7 @@ def generate_training_data(input_file, marker='🅁'):
     sentences = load_sentences_from_file(input_file)
 
     for sentence in sentences:
-        example = create_reversal_example(sentence, marker)
+        example = partial_reverse(sentence)
         if example:
             training_data.append(example)
 
