@@ -1,14 +1,15 @@
 import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
+from exact_match import exact_match
 import argparse
 from pathlib import Path
 import torch
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from tqdm import tqdm
-from utils.reverse import partial_reverse
+from utils.reverse import partial_reverse, partial_reverse_in_batch
+
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -22,17 +23,6 @@ def get_device():
 
 
 DEVICE = get_device()
-
-def exact_match(prediction: list, actual: list):
-    if len(prediction) != len(actual):
-        raise ValueError("Prediction and actual lists must have the same length")
-
-    if len(prediction) == 0:
-        return 0.0
-    matches = sum(pred == act for pred, act in zip(prediction, actual))
-    accuracy = matches / len(prediction)
-
-    return accuracy
 
 
 def create_test_example(text, marker='🅁'):
@@ -92,15 +82,19 @@ def test_model(model_path, test_examples):
     total_count = len(test_examples)
     prediction = []
     actual = []
-    for i, test_input in tqdm(enumerate(test_examples, 1), total=total_count):
+    inputs_corrupted = partial_reverse_in_batch(test_examples, batch_size=512)
+    for  input_corrupted, test_input in tqdm(inputs_corrupted):
         # IMPORTANT: Use the same prompt format as training
-        input_corrupted = partial_reverse(test_input)
+        # input_corrupted = partial_reverse(test_input)
+        # if not input_corrupted:
+        #     continue
         if not input_corrupted:
             continue
+
         prompt = f"Fix this text: {input_corrupted}\nCorrected:"
 
         # Tokenize input
-        input_tokens = tokenizer.encode(test_input)
+        input_tokens = tokenizer.encode(input_corrupted)
         prompt_encoding = tokenizer(prompt, return_tensors="pt")
 
         # Move input to device
