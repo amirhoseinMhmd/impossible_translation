@@ -76,14 +76,14 @@ def _process_chunk_partial_reverse_batched(args):
     results = []
     for i in range(0, len(chunk), batch_size):
         batch = chunk[i:i + batch_size]
-        results.extend(partial_reverse_batch(batch))
+        results.extend(_partial_reverse_batch(batch))
     return results
 
 def _chunk_list(lst: List, n_chunks: int) -> List[List]:
     chunk_size = len(lst) // n_chunks + (1 if len(lst) % n_chunks else 0)
     return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
-def partial_reverse_batch(texts: List[str]) -> List[str]:
+def _partial_reverse_batch(texts: List[str]) -> List[str]:
     random.seed(42)
     texts = [t.strip() for t in texts]
 
@@ -116,7 +116,7 @@ def partial_reverse_fast(texts: List[str], batch_size: int = 128, n_workers: int
         n_workers = max(1, cpu_count() - 1)
 
     if len(texts) < 500:
-        return partial_reverse_batch(texts)
+        return _partial_reverse_batch(texts)
 
     chunks = _chunk_list(texts, n_workers)
     chunk_args = [(chunk, batch_size) for chunk in chunks]
@@ -130,7 +130,7 @@ def partial_reverse_fast(texts: List[str], batch_size: int = 128, n_workers: int
 
     return results
 
-def partial_reverse_in_batch(texts: List[str], batch_size: int = 128, n_workers: int = None) -> List[tuple]:
+def partial_reverse_batch(texts: List[str], batch_size: int = 128, n_workers: int = None) -> List[tuple]:
     originals = [t.strip() for t in texts]
     corrupted = partial_reverse_fast(texts, batch_size, n_workers)
     return list(zip(corrupted, originals))

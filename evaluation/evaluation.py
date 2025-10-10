@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from tqdm import tqdm
-from utils.reverse import partial_reverse_in_batch
+from utils.reverse import partial_reverse_batch
 
 metrics = {
     'exact_match': exact_match,
@@ -90,7 +90,7 @@ def test_model(model_path, test_examples, metric):
     total_count = len(test_examples)
     prediction = []
     actual = []
-    inputs_corrupted = partial_reverse_in_batch(test_examples, batch_size=512)
+    inputs_corrupted = partial_reverse_batch(test_examples, batch_size=512)
     for input_corrupted, test_input in tqdm(inputs_corrupted):
 
         if not input_corrupted:

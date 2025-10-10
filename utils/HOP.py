@@ -1,10 +1,19 @@
 from transformers import GPT2Tokenizer
 import spacy
+from typing import List
+from multiprocessing import Pool, cpu_count
 
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 nlp = spacy.load("en_core_web_trf")
 SINGULAR_MARKER = '🅂'
 PLURAL_MARKER = '🄿'
+
+
+def _chunk_list(lst: List, n_chunks: int) -> List[List]:
+
+    chunk_size = len(lst) // n_chunks + (1 if len(lst) % n_chunks else 0)
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
 
 def nohop(text: str) -> str:
     doc = nlp(text)
@@ -159,6 +168,79 @@ def wordhop(text: str) -> str:
 
     return ''.join(result).strip().replace('  ', ' ')
 
+
+def _wordhop_batch(texts: List[str]) -> List[str]:
+
+    docs = list(nlp.pipe(texts))
+    results = []
+
+    for text, doc in zip(texts, docs):
+        tokens = list(doc)
+        result = []
+        pending_markers = []
+        word_count = 0
+
+        for i, token in enumerate(tokens):
+            markers_to_insert = [m for wc, m in pending_markers if wc == word_count]
+            for marker in markers_to_insert:
+                result.append(marker)
+                result.append(' ')
+            pending_markers = [(wc, m) for wc, m in pending_markers if wc != word_count]
+
+            if is_3rd_person_present_verb(token):
+                result.append(token.lemma_)
+                marker = SINGULAR_MARKER if is_singular_verb(token) else PLURAL_MARKER
+                target_wc = word_count + 4 + (1 if not token.is_punct else 0)
+                pending_markers.append((target_wc, ' ' + marker))
+            else:
+                result.append(token.text)
+
+            if not token.is_punct:
+                word_count += 1
+
+            if token.whitespace_:
+                result.append(' ')
+
+        for _, marker in pending_markers:
+            result.append(' ')
+            result.append(marker)
+
+        results.append(''.join(result).strip().replace('  ', ' '))
+
+    return results
+
+def _process_chunk_wordhop_batched(args):
+    chunk, batch_size = args
+    results = []
+    for i in range(0, len(chunk), batch_size):
+        batch = chunk[i:i + batch_size]
+        results.extend(_wordhop_batch(batch))
+    return results
+
+def wordhop_fast(texts: List[str], batch_size: int = 32, n_workers: int = None) -> List[str]:
+
+    if n_workers is None:
+        n_workers = max(1, cpu_count() - 1)
+
+    if len(texts) < 100:
+        return _wordhop_batch(texts)
+
+    chunks = _chunk_list(texts, n_workers)
+    chunk_args = [(chunk, batch_size) for chunk in chunks]
+
+    with Pool(n_workers) as pool:
+        results_nested = pool.map(_process_chunk_wordhop_batched, chunk_args)
+
+    results = []
+    for chunk_results in results_nested:
+        results.extend(chunk_results)
+
+    return results
+
+def wordhop_batch(texts: List[str], batch_size: int = 32, n_workers: int = None) -> List[tuple]:
+    originals = [t.strip() for t in texts]
+    corrupted = wordhop_fast(texts, batch_size, n_workers)
+    return list(zip(corrupted, originals))
 
 def is_3rd_person_present_verb(token) -> bool:
     # Check for present tense verbs

@@ -1,8 +1,8 @@
 import sys
 import os
 
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-import json
 from pathlib import Path
 import torch
 from transformers import (
@@ -15,7 +15,14 @@ import yaml
 from datasets import Dataset
 import argparse
 from tqdm import tqdm
-from utils.reverse import partial_reverse_in_batch
+from utils.reverse import partial_reverse_batch
+from utils.HOP import wordhop_batch
+
+functions = {
+    "partialReverse": partial_reverse_batch,
+    "localShuffle": 'local shuffle',
+    "wordHop": wordhop_batch
+}
 
 
 def load_configs(config_path):
@@ -57,18 +64,11 @@ def load_sentences_from_file(input_file):
     return sentences
 
 
-def generate_training_data(input_file):
+def generate_training_data(input_file, type_of_perturbation):
+    print("Generating training data...")
     sentences = load_sentences_from_file(input_file)
-    training_data = partial_reverse_in_batch(sentences, 512)
+    training_data = functions[type_of_perturbation](sentences, 512)
     return training_data
-
-
-def save_dataset(data, output_file='training_data.json'):
-    """Save dataset to JSON file."""
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved {len(data)} examples to {output_file}")
-
 
 def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128):
     # Split into train and eval
@@ -106,11 +106,23 @@ def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128):
             )
             prompt_length = len(prompt_encoded['input_ids'])
 
-            # CRITICAL: Create labels with masking
+            # Create labels with masking
             # -100 = ignored by loss function (prompt part)
             # actual token IDs = used for loss computation (output part)
-            labels = [-100] * prompt_length + encoded['input_ids'][prompt_length:]
+            # Find the actual position of "Corrected:" in the tokenized output
+            corrected_token_ids = tokenizer.encode("Corrected:", add_special_tokens=False)
+            position = None
+            for i in range(len(encoded['input_ids']) - len(corrected_token_ids)):
+                if encoded['input_ids'][i:i + len(corrected_token_ids)] == corrected_token_ids:
+                    position = i + len(corrected_token_ids)
+                    break
 
+            if position is None:
+                # Fallback to your original method
+                position = prompt_length
+
+            # Create labels
+            labels = [-100] * position + encoded['input_ids'][position:]
             # Ensure correct length
             labels = labels[:max_length]
             if len(labels) < max_length:
@@ -182,19 +194,18 @@ def train_model(
     return model, tokenizer
 
 
-def main(config, input_file='input_sentences.txt', model_name='gpt2'):
-    MARKER = '🅁'
-    OUTPUT_DIR = config.get('training_arguments', {}).get('output_dir', './gpt2-reversal')
+def main(config, input_file, model_name, type_of_perturbation):
+    OUTPUT_DIR = config.get('training_arguments', {}).get('output_dir', None)
+    if not OUTPUT_DIR:
+        raise ValueError("Output directory must be specified in training_arguments.output_dir")
 
-    # Step 1: Generate training data from input file
+    # Generate training data from input file
     print(f"Reading sentences from {input_file}...")
     training_data = generate_training_data(
-        input_file=input_file)
+        input_file=input_file,
+        type_of_perturbation=type_of_perturbation)
 
-    # Optionally save the dataset
-    # save_dataset(training_data, 'training_data.json')
-
-    # Step 2: Prepare tokenizer and datasets with masked labels
+    # Prepare tokenizer and datasets with masked labels
     print("\nPreparing datasets...")
     tokenizer = GPT2Tokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
@@ -207,7 +218,7 @@ def main(config, input_file='input_sentences.txt', model_name='gpt2'):
     print(f"Train samples: {len(train_dataset)}")
     print(f"Eval samples: {len(eval_dataset)}")
 
-    # Step 3: Train model
+    # Train model
     train_model(
         train_dataset,
         eval_dataset,
@@ -225,7 +236,10 @@ if __name__ == "__main__":
                         help="Path to input sentences file")
     parser.add_argument('-c', '--config', type=str, required=True,
                         help="Path to YAML configuration file")
+    parser.add_argument('-t', '--type', type=str, required=True,
+                        help="Type of perturbation (wordHop, partialReverse, localShuffle, etc.)")
+
     args = parser.parse_args()
     config = load_configs(args.config)
 
-    main(config=config, input_file=args.path, model_name=args.model)
+    main(config=config, input_file=args.path, model_name=args.model, type_of_perturbation=args.type)
