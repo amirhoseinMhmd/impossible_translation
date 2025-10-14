@@ -17,11 +17,6 @@ from utils.reverse import partial_reverse_batch
 from utils.HOP import wordhop_batch
 from utils.shuffle import local_shuffle_batch
 
-metrics = {
-    'exact_match': exact_match,
-    'BLEU': bleu_score
-}
-
 functions = {
     "partialReverse": partial_reverse_batch,
     "localShuffle": local_shuffle_batch,
@@ -188,7 +183,7 @@ def process_long_text(input_corrupted, tokenizer, model, max_position_embeddings
     return merged
 
 
-def test_model(model_path, test_examples, metric):
+def test_model(model_path, test_examples):
     # Validate model path
     if not Path(model_path).exists():
         raise FileNotFoundError(f"Model not found at: {model_path}")
@@ -196,7 +191,7 @@ def test_model(model_path, test_examples, metric):
     print(f"\nLoading model from: {model_path}")
 
     # Load tokenizer and model
-    tokenizer = GPT2Tokenizer.from_pretrained('mission-impossible-lms/partial-reverse-gpt2')
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     model = GPT2LMHeadModel.from_pretrained(model_path)
     model.config.pad_token_id = tokenizer.eos_token_id
 
@@ -237,13 +232,17 @@ def test_model(model_path, test_examples, metric):
                 actual.append(test_input)
                 continue
 
-            accuracy = metrics[metric](prediction, actual)
-            pbar.set_description(f"Accuracy: {accuracy:.4f}")
+            exact_match_accuracy = exact_match(prediction, actual)
+            bleu_score_accuracy = bleu_score(prediction, actual)
 
-    final_score = metrics[metric](prediction, actual)
+            pbar.set_description(f"EM:{exact_match_accuracy:.4f}, BLEU:{bleu_score_accuracy:.4f}")
+
+    final_exact_match_accuracy = exact_match(prediction, actual)
+    final_bleu_score_accuracy = bleu_score(prediction, actual)
     print(f"\nmodel: {model_path}")
-    print(f"{metric}: {final_score}")
-    return final_score
+    print(f"EM: {final_exact_match_accuracy}")
+    print(f"BLEU: {final_bleu_score_accuracy}")
+    return final_exact_match_accuracy, final_bleu_score_accuracy
 
 
 def get_checkpoints_sorted(path):
@@ -266,8 +265,8 @@ def save_results(results, output_file):
     print(f"Saved results to {output_file}")
 
 
-def main(model_path, dataset_path, metric, type_of_perturbation):
-    test_data_path = f"./test_data_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_{metric}.json"
+def main(model_path, dataset_path, type_of_perturbation):
+    test_data_path = f"./test_data_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}.json"
 
     # Generate training data from input file
     print(f"Reading sentences from {dataset_path}...")
@@ -294,12 +293,14 @@ def main(model_path, dataset_path, metric, type_of_perturbation):
             print(f"Evaluating checkpoint: {os.path.basename(checkpoint_dir)}")
             print(f"{'=' * 80}")
             checkpoint = os.path.basename(checkpoint_dir)
-            results[checkpoint] = test_model(checkpoint_dir, test_examples, metric)
+            em, bleu = test_model(checkpoint_dir, test_examples)
+            results[checkpoint] = {"EM": em, "BLEU": bleu}
 
-    results['final'] = test_model(model_path, test_examples, metric)
+    em, bleu = test_model(model_path, test_examples)
+    results['final'] = {"EM": em, "BLEU": bleu}
 
     # Save results
-    output_file = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_{metric}.json"
+    output_file = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}.json"
     save_results(results, output_file)
 
     print(f"\n{'=' * 80}")
@@ -333,11 +334,6 @@ if __name__ == '__main__':
                         required=True,
                         help="Type of perturbation (wordHop, partialReverse, localShuffle, etc.)")
 
-    parser.add_argument("--metric",
-                        type=str,
-                        default="exact_match",
-                        help="Metric to use for evaluation. Default: exact_match. Options: exact_match, BLEU")
-
     args = parser.parse_args()
 
-    main(args.model, args.path, args.metric, args.type)
+    main(args.model, args.path, args.type)
