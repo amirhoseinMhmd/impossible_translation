@@ -254,8 +254,8 @@ def get_checkpoints_sorted(path):
     # Find all dirs matching the pattern checkpoint*
     checkpoint_dirs = [d for d in glob.glob(os.path.join(path, "checkpoint*")) if os.path.isdir(d)]
 
-    # Sort by creation time (newest first)
-    checkpoint_dirs.sort(key=lambda d: os.path.getctime(d), reverse=True)
+    # Sort by creation time (Oldest first)
+    checkpoint_dirs.sort(key=lambda d: os.path.getctime(d), reverse=False)
 
     return checkpoint_dirs
 
