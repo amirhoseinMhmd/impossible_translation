@@ -1,7 +1,6 @@
 import sys
 import os
 
-from utils.shuffle import local_shuffle_batch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from pathlib import Path
@@ -19,6 +18,7 @@ import argparse
 from tqdm import tqdm
 from utils.reverse import partial_reverse_batch
 from utils.HOP import wordhop_batch
+from utils.shuffle import local_shuffle_batch
 
 functions = {
     "partialReverse": partial_reverse_batch,
