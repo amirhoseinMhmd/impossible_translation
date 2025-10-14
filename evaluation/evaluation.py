@@ -213,29 +213,30 @@ def test_model(model_path, test_examples):
             if not input_corrupted:
                 continue
 
-            try:
-                # Process with chunking if needed
-                corrected = process_long_text(
-                    input_corrupted,
-                    tokenizer,
-                    model,
-                    max_position_embeddings
-                )
+            # try:
+            # Process with chunking if needed
+            corrected = process_long_text(
+                input_corrupted,
+                tokenizer,
+                model,
+                max_position_embeddings
+            )
 
-                prediction.append(corrected)
-                actual.append(test_input)
+            prediction.append(corrected)
+            actual.append(test_input)
 
-            except Exception as e:
-                print(f"\nError processing example: {e}")
-                print(f"Input length: {len(tokenizer.encode(input_corrupted))} tokens")
-                prediction.append("")
-                actual.append(test_input)
-                continue
+        # except Exception as e:
+        #     print(f"\nError processing example: {e}")
+        #     print(f"Input length: {len(tokenizer.encode(input_corrupted))} tokens")
+        #     prediction.append("")
+        #     actual.append(test_input)
+        #     continue
 
             exact_match_accuracy = exact_match(prediction, actual)
             bleu_score_accuracy = bleu_score(prediction, actual)
 
             pbar.set_description(f"EM:{exact_match_accuracy:.4f}, BLEU:{bleu_score_accuracy:.4f}")
+
 
     final_exact_match_accuracy = exact_match(prediction, actual)
     final_bleu_score_accuracy = bleu_score(prediction, actual)
