@@ -176,7 +176,7 @@ def save_results(results, output_file):
 
 
 def main(model_path, dataset_path, metric, type_of_perturbation):
-    training_data_path = f"./test_data_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}.json"
+    training_data_path = f"./test_data_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_{metric}.json"
 
     # Generate training data from input file
     print(f"Reading sentences from {dataset_path}...")
