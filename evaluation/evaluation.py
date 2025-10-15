@@ -299,7 +299,7 @@ def main(model_path, dataset_path, metric, type_of_perturbation):
     results['final'] = test_model(model_path, test_examples, metric)
 
     # Save results
-    output_file = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}.json"
+    output_file = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_{metric}.json"
     save_results(results, output_file)
 
     print(f"\n{'=' * 80}")
