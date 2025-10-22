@@ -246,8 +246,6 @@ def main(config, input_file, model_name, type_of_perturbation):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-m', '--model', type=str, required=True,
-                        help="Model name or path (e.g., 'gpt2', 'gpt2-medium')")
     parser.add_argument('-p', '--path', type=str, required=True,
                         help="Path to input sentences file")
     parser.add_argument('-c', '--config', type=str, required=True,
@@ -257,5 +255,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     config = load_configs(args.config)
-
-    main(config=config, input_file=args.path, model_name=args.model, type_of_perturbation=args.type)
+    if args.type == 'wordHop':
+        model = 'mission-impossible-lms/word-hop-gpt2'
+    elif args.type == 'partialReverse':
+        model = 'mission-impossible-lms/partial-reverse-gpt2'
+    elif args.type == 'localShuffle':
+        model = 'mission-impossible-lms/local-shuffle-w3-gpt2-no-pos'
+    else:
+        raise ValueError("Invalid perturbation type. Choose from 'wordHop', 'partialReverse', or 'localShuffle'.")
+    main(config=config, input_file=args.path, model_name=model, type_of_perturbation=args.type)
