@@ -189,6 +189,7 @@ def process_long_text(input_corrupted, tokenizer, model, max_position_embeddings
 
 
 def test_model(model_path, test_examples):
+    full_data_sample = []
     # Validate model path
     if not Path(model_path).exists():
         raise FileNotFoundError(f"Model not found at: {model_path}")
@@ -220,14 +221,14 @@ def test_model(model_path, test_examples):
 
             try:
                 # Process with chunking if needed
-                corrected = process_long_text(
+                predicted = process_long_text(
                     input_corrupted,
                     tokenizer,
                     model,
                     max_position_embeddings
                 )
 
-                prediction.append(corrected)
+                prediction.append(predicted)
                 actual.append(test_input)
 
             except Exception as e:
@@ -240,6 +241,7 @@ def test_model(model_path, test_examples):
             bleu_accuracy = metrics['BLEU'](prediction, actual)
             em_accuracy = metrics['exact_match'](prediction, actual)
             pbar.set_description(f"BU Accuracy: {bleu_accuracy:.4f},  EM: {em_accuracy:.4f}")
+            full_data_sample.append({"input": input_corrupted, "prediction": predicted, "actual": test_input})
             # pbar.set_description(f"EM: {em_accuracy:.4f}")
 
     final_em_score = metrics['exact_match'](prediction, actual)
@@ -247,7 +249,7 @@ def test_model(model_path, test_examples):
     print(f"\nmodel: {model_path}")
     print(f" Bleu: {final_bleu_score:.4f}")
     print(f"EM: {final_em_score:.4f}")
-    return final_em_score, final_bleu_score
+    return final_em_score, final_bleu_score, full_data_sample
 
 
 def get_checkpoints_sorted(path):
@@ -299,9 +301,11 @@ def main(model_path, dataset_path, type_of_perturbation):
             print(f"Evaluating checkpoint: {os.path.basename(checkpoint_dir)}")
             print(f"{'=' * 80}")
             checkpoint = os.path.basename(checkpoint_dir)
-            em_results[checkpoint], bu_results[checkpoint] = test_model(checkpoint_dir, test_examples)
+            em_results[checkpoint], bu_results[checkpoint], full_samples = test_model(checkpoint_dir, test_examples)
+            save_dataset(full_samples, f"./full_samples_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_{checkpoint}.json")
 
-    em_results['final'], bu_results['final'] = test_model(model_path, test_examples)
+    em_results['final'], bu_results['final'], full_samples= test_model(model_path, test_examples)
+    save_dataset(full_samples, f"./full_samples_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_final.json")
 
     # Save results
     output_file_em = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_EM.json"
