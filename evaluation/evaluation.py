@@ -299,9 +299,9 @@ def main(model_path, dataset_path, metric, type_of_perturbation):
             print(f"Evaluating checkpoint: {os.path.basename(checkpoint_dir)}")
             print(f"{'=' * 80}")
             checkpoint = os.path.basename(checkpoint_dir)
-            em_results[checkpoint], bu_results[checkpoint]= test_model(checkpoint_dir, test_examples, metric)
+            em_results[checkpoint], bu_results[checkpoint] = test_model(checkpoint_dir, test_examples, metric)
 
-    em_results['final'], bu_results['final']= test_model(model_path, test_examples, metric)
+    em_results['final'], bu_results['final'] = test_model(model_path, test_examples, metric)
 
     # Save results
     output_file_em = f"./results_{dataset_path.split('/')[-1].split('.')[0]}_{type_of_perturbation}_EM.json"
@@ -344,11 +344,6 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help="Type of perturbation (wordHop, partialReverse, localShuffle, etc.)")
-
-    parser.add_argument("--metric",
-                        type=str,
-                        default="exact_match",
-                        help="Metric to use for evaluation. Default: exact_match. Options: exact_match, BLEU")
 
     args = parser.parse_args()
 
