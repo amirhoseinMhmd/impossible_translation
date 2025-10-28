@@ -1,9 +1,9 @@
-import os
 import sys
+import os
 
-from utils import save_dataset, load_sentences_from_file
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.utils import load_sentences_from_file, save_dataset
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 import argparse
 from transformers import GPT2Tokenizer, AddedToken
 import spacy

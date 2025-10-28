@@ -1,10 +1,14 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.utils import load_sentences_from_file, save_dataset
 from transformers import GPT2Tokenizer
 import random
 from typing import List
 from tqdm import tqdm
 import argparse
 import os
-from utils import save_dataset, load_sentences_from_file
 
 tokenizer = None
 

@@ -1,3 +1,9 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.utils import load_sentences_from_file, save_dataset
+
 import argparse
 import os
 from pathlib import Path
@@ -5,7 +11,6 @@ from typing import List
 from numpy.random import default_rng
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
-from utils import save_dataset, load_sentences_from_file
 
 tokenizer = None
 

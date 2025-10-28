@@ -59,16 +59,20 @@ def test_load_sentences_from_file_not_found():
     with pytest.raises(FileNotFoundError):
         finetune.load_sentences_from_file("non_existent_file.txt")
 
-@patch('finetune.functions', {"partialReverse": lambda x, y: [("corrupted " + s, s) for s in x]})
+@patch('finetune.functions', {
+    "partialReverse": lambda x: [("corrupted " + s, s) for s in x]
+})
 def test_generate_training_data(temp_files):
     input_file, _ = temp_files
     training_data = finetune.generate_training_data(str(input_file), "partialReverse")
+
     assert len(training_data) == len(TEST_SENTENCES)
     for item in training_data:
         assert isinstance(item, tuple)
         assert len(item) == 2
         assert item[0].startswith("corrupted")
         assert item[1] in TEST_SENTENCES
+
 
 @patch('finetune.GPT2Tokenizer.from_pretrained')
 @patch('finetune.tqdm', lambda x: x)
