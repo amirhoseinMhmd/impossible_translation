@@ -8,7 +8,7 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from models import create_model_from_scratch
+from models import create_model_from_scratch, AVAILABLE_MODELS
 import json
 import yaml
 from datasets import Dataset
@@ -54,7 +54,7 @@ def load_sentences_from_file(input_file):
     with open(input_file, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            if line and len(line.split()) >= 3:  # Must have at least 3 tokens
+            if line and len(line.split()) >= 3:
                 sentences.append(line)
 
     if not sentences:
@@ -252,16 +252,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--type', type=str, required=True,
                         help="Type of perturbation (wordHop, partialReverse, localShuffle)")
     parser.add_argument('-m', '--model', type=str, default='pythia-160m',
-                        choices=[
-                            'pythia-160m',
-                            'olmo-0.5b',
-                            'tinyllama-1.1b',
-                            'phi3-mini',
-                            'phi4',
-                            'phi4-mini',
-                            'gpt2-small',
-                            'gpt2-base'
-                        ],
+                        choices=AVAILABLE_MODELS,
                         help="Model architecture to train from scratch (default: pythia-160m)")
 
     args = parser.parse_args()
