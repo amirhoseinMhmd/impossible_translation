@@ -252,7 +252,16 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--type', type=str, required=True,
                         help="Type of perturbation (wordHop, partialReverse, localShuffle)")
     parser.add_argument('-m', '--model', type=str, default='pythia-160m',
-                        choices=['pythia-160m', 'olmo-0.5b', 'tinyllama-1.1b', 'gpt2-small', 'gpt2-base'],
+                        choices=[
+                            'pythia-160m',
+                            'olmo-0.5b',
+                            'tinyllama-1.1b',
+                            'phi3-mini',
+                            'phi4',
+                            'phi4-mini',
+                            'gpt2-small',
+                            'gpt2-base'
+                        ],
                         help="Model architecture to train from scratch (default: pythia-160m)")
 
     args = parser.parse_args()
