@@ -15,6 +15,66 @@ test-logs/
 
 # Test output
 test-output/
+
+# IDE / OS
 .venv
 .idea
-__pycache__/
+.DS_Store
+.pytest_cache/
+.qodo/
+.claude/
+
+# Plot images
+*.png
+*.pdf
+plots/
+
+# Large datasets and raw text
+*.train
+*.test
+*.txt
+gutenberg-100k-*/
+
+# Training and test data (generated JSON)
+training_data_*.json
+test_data_*.json
+wordhop_*.json
+
+# Model checkpoints and outputs
+checkpoint-*/
+models/
+gpt2-lora-translation/
+
+# Experiment results and samples
+results/
+full-samples/
+*_perplexity_results.csv
+*.csv
+
+# Evaluation result JSON files
+evaluation/results_*.json
+evaluation/test_data_*.json
+
+# Utils experiment data and plots
+utils/adl_plots.py
+utils/parsing.py
+utils/*-dl-plots/
+utils/shuffle-reverse*/
+utils/training_data_*.json
+
+# Loose scripts (not part of core package)
+plot.py
+perplexity_plot.py
+perplexity_plot2.py
+perturb.py
+fine_tune.py
+export_data.py
+find_sample.py
+push_models.py
+sampling.py
+token_class_sampling.py
+tag.py
+temp.py
+test.py
+dataset_study.py
+data/
