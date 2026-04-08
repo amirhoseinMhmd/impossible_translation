@@ -3,10 +3,14 @@ import json
 import os
 import argparse
 from pathlib import Path
+import sys
 
 import torch
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
 from tqdm import tqdm
+
+# Add parent directory to path to allow imports from utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from evaluation.exact_match import exact_match
 from evaluation.bleu import bleu_score

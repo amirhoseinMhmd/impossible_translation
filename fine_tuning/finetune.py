@@ -1,6 +1,7 @@
 import json
 import argparse
 from pathlib import Path
+import sys
 
 import torch
 from transformers import (
@@ -11,6 +12,9 @@ from transformers import (
 )
 from datasets import Dataset
 from tqdm import tqdm
+
+# Add parent directory to path to allow imports from utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.utils import load_sentences_from_file, save_dataset, load_configs, get_device
 from utils.reverse import partial_reverse_batch
@@ -204,7 +208,7 @@ if __name__ == "__main__":
         model = 'mission-impossible-lms/local-shuffle-w3-gpt2'
     elif args.type == 'localShuffle5':
         model = 'mission-impossible-lms/local-shuffle-w5-gpt2'
-    elif args.type == 'localShuffle3':
+    elif args.type == 'fullShuffle':
         model = 'mission-impossible-lms/deterministic-shuffle-s57-gpt2'
     else:
         raise ValueError("Invalid perturbation type. Choose from 'wordHop', 'partialReverse', or 'localShuffle'.")
