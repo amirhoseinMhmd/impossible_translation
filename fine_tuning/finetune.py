@@ -192,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', type=str, required=True,
                         help="Path to YAML configuration file")
     parser.add_argument('-t', '--type', type=str, required=True,
-                        help="Type of perturbation (wordHop, partialReverse, localShuffle, etc.)")
+                        help="Type of perturbation (wordHop, partialReverse, localShuffle3, localShuffle5, fullShuffle etc.)")
 
     args = parser.parse_args()
     config = load_configs(args.config)
@@ -200,8 +200,12 @@ if __name__ == "__main__":
         model = 'mission-impossible-lms/word-hop-gpt2'
     elif args.type == 'partialReverse':
         model = 'mission-impossible-lms/partial-reverse-gpt2'
-    elif args.type == 'localShuffle':
+    elif args.type == 'localShuffle3':
         model = 'mission-impossible-lms/local-shuffle-w3-gpt2'
+    elif args.type == 'localShuffle5':
+        model = 'mission-impossible-lms/local-shuffle-w5-gpt2'
+    elif args.type == 'localShuffle3':
+        model = 'mission-impossible-lms/deterministic-shuffle-s57-gpt2'
     else:
         raise ValueError("Invalid perturbation type. Choose from 'wordHop', 'partialReverse', or 'localShuffle'.")
     main(config=config, input_file=args.path, model_name=model, type_of_perturbation=args.type)

@@ -82,17 +82,17 @@ def local_shuffle_batch(texts: List[str]) -> List[tuple]:
 def pre_process(input_file, training_data_path, type='local3'):
     training_data = []
     sentences = load_sentences_from_file(input_file)
-    if type == 'local3':
+    if type == 'localShuffle3':
         for sentence in tqdm(sentences):
             training_data.append((local_shuffle(sentence, window_size= 3), sentence))
 
-    elif type == 'local5':
+    elif type == 'localShuffle5':
         for sentence in tqdm(sentences):
             training_data.append((local_shuffle(sentence, window_size= 5), sentence))
 
-    elif type == 'full':
+    elif type == 'fullShuffle':
         for sentence in tqdm(sentences):
-            training_data.append((full_shuffle(sentence), sentence))
+            training_data.append((full_shuffle(sentence, seed=57), sentence))
 
     save_dataset(training_data, training_data_path)
 
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-i', '--input', type=str, required=True, )
-    parser.add_argument("-t", '--type', type=str, required=True, choices=['local3', 'local5', 'full'], default='local3')
+    parser.add_argument("-t", '--type', type=str, required=True, choices=['localShuffle3', 'localShuffle5', 'fullShuffle'], default='local3')
 
     args = parser.parse_args()
 
