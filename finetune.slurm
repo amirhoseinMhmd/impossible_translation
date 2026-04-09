@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=llada_finetune
+#SBATCH --job-name=finetune
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --time=1:30:00
