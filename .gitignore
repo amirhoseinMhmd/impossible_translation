@@ -57,7 +57,6 @@ evaluation/test_data_*.json
 
 # Utils experiment data and plots
 utils/adl_plots.py
-utils/parsing.py
 utils/*-dl-plots/
 utils/shuffle-reverse*/
 utils/training_data_*.json
