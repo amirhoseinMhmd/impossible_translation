@@ -1,5 +1,6 @@
 import json
 import argparse
+from contextlib import nullcontext
 from pathlib import Path
 import sys
 
@@ -134,41 +135,143 @@ def process_long_text(input_corrupted, tokenizer, model, max_position_embeddings
     return merge_chunks(corrected_chunks)
 
 
-def generate_full_samples(model, tokenizer, sample_examples):
-    max_position_embeddings = model.config.max_position_embeddings
-    full_samples = []
+def _batched_generate_predictions(batch_inputs, tokenizer, model, max_position_embeddings):
+    if not batch_inputs:
+        return []
 
-    for input_corrupted, actual in tqdm(sample_examples, desc="Saving full samples", leave=False):
+    prompts = [f"Fix this text: {text}\nCorrected:" for text in batch_inputs]
+    input_token_lengths = [len(tokenizer.encode(text)) for text in batch_inputs]
+
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    try:
+        prompt_encoding = tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        )
+    finally:
+        tokenizer.padding_side = original_padding_side
+
+    input_ids = prompt_encoding['input_ids'].to(DEVICE)
+    attention_mask = prompt_encoding['attention_mask'].to(DEVICE)
+
+    batch_prompt_length = int(attention_mask.sum(dim=1).max().item())
+    batch_max_input_tokens = max(input_token_lengths)
+    max_new_tokens = min(batch_max_input_tokens + 5, max_position_embeddings - batch_prompt_length)
+    min_new_tokens = max(1, min(input_token_lengths) - 5)
+
+    autocast_context = (
+        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        if DEVICE.type == "cuda"
+        else nullcontext()
+    )
+
+    with torch.inference_mode():
+        with autocast_context:
+            output = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                min_new_tokens=min_new_tokens,
+                temperature=0.3,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+
+    generated_texts = tokenizer.batch_decode(output, skip_special_tokens=True)
+    predictions = []
+
+    for generated in generated_texts:
+        if "Corrected:" in generated:
+            predictions.append(generated.split("Corrected:")[1].strip())
+        else:
+            predictions.append(generated.strip())
+
+    return predictions
+
+
+def generate_full_samples(model, tokenizer, sample_examples, batch_size=32):
+    max_position_embeddings = model.config.max_position_embeddings
+    prompt_template = "Fix this text: {}\nCorrected:"
+    prompt_overhead = len(tokenizer.encode(prompt_template.format("")))
+    max_input_size = max_position_embeddings - prompt_overhead - 50
+
+    full_samples = [None] * len(sample_examples)
+    short_examples = []
+    long_examples = []
+
+    for idx, (input_corrupted, actual) in enumerate(sample_examples):
         if not input_corrupted:
+            full_samples[idx] = {
+                "input": input_corrupted,
+                "prediction": "",
+                "actual": actual,
+            }
             continue
 
-        try:
-            prediction = process_long_text(
-                input_corrupted,
+        input_length = len(tokenizer.encode(input_corrupted))
+        item = (idx, input_corrupted, actual, input_length)
+
+        if input_length <= max_input_size:
+            short_examples.append(item)
+        else:
+            long_examples.append(item)
+
+    short_examples.sort(key=lambda item: item[3])
+
+    with tqdm(total=len(sample_examples), desc="Saving full samples", leave=False) as pbar:
+        for batch_start in range(0, len(short_examples), batch_size):
+            batch = short_examples[batch_start:batch_start + batch_size]
+            batch_inputs = [item[1] for item in batch]
+            batch_predictions = _batched_generate_predictions(
+                batch_inputs,
                 tokenizer,
                 model,
                 max_position_embeddings,
             )
-        except Exception as exc:
-            print(f"Error generating sample: {exc}")
-            prediction = ""
 
-        full_samples.append({
-            "input": input_corrupted,
-            "prediction": prediction,
-            "actual": actual,
-        })
+            for (idx, input_corrupted, actual, _), prediction in zip(batch, batch_predictions):
+                full_samples[idx] = {
+                    "input": input_corrupted,
+                    "prediction": prediction,
+                    "actual": actual,
+                }
 
-    return full_samples
+            pbar.update(len(batch))
+
+        for idx, input_corrupted, actual, _ in long_examples:
+            try:
+                prediction = process_long_text(
+                    input_corrupted,
+                    tokenizer,
+                    model,
+                    max_position_embeddings,
+                )
+            except Exception as exc:
+                print(f"Error generating sample: {exc}")
+                prediction = ""
+
+            full_samples[idx] = {
+                "input": input_corrupted,
+                "prediction": prediction,
+                "actual": actual,
+            }
+            pbar.update(1)
+
+    return [sample for sample in full_samples if sample is not None]
 
 
 class FullSamplesTrainer(Trainer):
-    def __init__(self, *args, sample_examples=None, sample_output_dir=None, sample_output_prefix=None, export_tokenizer=None, **kwargs):
+    def __init__(self, *args, sample_examples=None, sample_output_dir=None, sample_output_prefix=None, export_tokenizer=None, sample_batch_size=32, **kwargs):
         super().__init__(*args, **kwargs)
         self.sample_examples = sample_examples or []
         self.sample_output_dir = Path(sample_output_dir or self.args.output_dir)
         self.sample_output_prefix = sample_output_prefix or "full_samples"
         self.export_tokenizer = export_tokenizer
+        self.sample_batch_size = sample_batch_size
         self.sample_output_dir.mkdir(parents=True, exist_ok=True)
 
     def save_full_samples(self, checkpoint_name):
@@ -177,7 +280,12 @@ class FullSamplesTrainer(Trainer):
 
         was_training = self.model.training
         self.model.eval()
-        full_samples = generate_full_samples(self.model, self.export_tokenizer, self.sample_examples)
+        full_samples = generate_full_samples(
+            self.model,
+            self.export_tokenizer,
+            self.sample_examples,
+            batch_size=self.sample_batch_size,
+        )
         output_path = self.sample_output_dir / f"{self.sample_output_prefix}_{checkpoint_name}.json"
         save_dataset(full_samples, output_path)
 
@@ -286,6 +394,13 @@ def train_model(
     model = model.to(DEVICE)
 
     training_config = config.get('training_arguments', {}).copy()
+    sample_batch_size = config.get(
+        'sample_arguments', {}
+    ).get(
+        'batch_size',
+        training_config.get('per_device_eval_batch_size', 32),
+    )
+
     if training_config.get('load_best_model_at_end'):
         print("Disabling load_best_model_at_end because model checkpoints are not being saved.")
         training_config['load_best_model_at_end'] = False
@@ -302,6 +417,7 @@ def train_model(
         sample_examples=eval_examples,
         sample_output_dir=output_dir,
         sample_output_prefix=f"full_samples_{dataset_name}_{type_of_perturbation}",
+        sample_batch_size=sample_batch_size,
     )
 
     print("Starting training...")

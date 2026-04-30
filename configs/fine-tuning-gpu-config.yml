@@ -40,3 +40,6 @@ training_arguments:
 
 data_arguments:
   max_length: 128
+
+sample_arguments:
+  batch_size: 64

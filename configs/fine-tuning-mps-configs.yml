@@ -28,6 +28,9 @@ training_arguments:
 data_arguments:
   max_length: 128
 
+sample_arguments:
+  batch_size: 16
+
 lora_config:
   r: 32
   lora_alpha: 64
