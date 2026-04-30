@@ -11,7 +11,14 @@ from transformers import (
 )
 from datasets import Dataset
 
-from utils.utils import load_sentences_from_file, save_dataset, load_configs, get_device
+from utils.utils import (
+    load_sentences_from_file,
+    save_dataset,
+    load_configs,
+    get_device,
+    apply_training_seed,
+    split_training_data,
+)
 
 DEVICE = get_device()
 
@@ -43,11 +50,12 @@ def generate_training_data(input_file, marker='🅁'):
     return training_data
 
 
-def prepare_seq2seq_dataset(training_data, tokenizer, train_split=0.9, max_length=128):
-    # Split into train and eval
-    split_idx = int(len(training_data) * train_split)
-    train_data = training_data[:split_idx]
-    eval_data = training_data[split_idx:]
+def prepare_seq2seq_dataset(training_data, tokenizer, train_split=0.9, max_length=128, split_seed=None):
+    train_data, eval_data = split_training_data(
+        training_data,
+        train_split=train_split,
+        split_seed=split_seed,
+    )
 
     def process_data(data):
         """Process data in seq2seq style."""
@@ -137,7 +145,9 @@ def train_model(train_dataset, eval_dataset, config, model_name, output_dir):
 
 
 def main(config, input_file, model_name):
+    apply_training_seed(config)
     MARKER = '🅁'
+    max_length = config.get('data_arguments', {}).get('max_length', 128)
     OUTPUT_DIR = config.get('training_arguments', {}).get('output_dir', './gpt2-seq2seq')
     training_data = generate_training_data(input_file=input_file, marker=MARKER)
 
@@ -149,7 +159,8 @@ def main(config, input_file, model_name):
     train_dataset, eval_dataset = prepare_seq2seq_dataset(
         training_data,
         tokenizer,
-        max_length=128
+        max_length=max_length,
+        split_seed=config.get('training_arguments', {}).get('data_seed'),
     )
     print()
 

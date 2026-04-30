@@ -1,4 +1,6 @@
-from transformers import AutoTokenizer, AddedToken
+import random
+
+from transformers import AutoTokenizer, AddedToken, set_seed as hf_set_seed
 import json
 from pathlib import Path
 import torch
@@ -48,6 +50,29 @@ def get_device():
         device = torch.device("cpu")
     print(f"Using device: {device}")
     return device
+
+
+def apply_training_seed(config):
+    training_config = config.get('training_arguments', {})
+    seed = training_config.get('seed')
+
+    if seed is None:
+        return None
+
+    hf_set_seed(seed)
+    print(f"Using training seed: {seed}")
+    return seed
+
+
+def split_training_data(training_data, train_split=0.9, split_seed=None):
+    examples = list(training_data)
+
+    if split_seed is not None:
+        random.Random(split_seed).shuffle(examples)
+        print(f"Using data seed for train/eval split: {split_seed}")
+
+    split_idx = int(len(examples) * train_split)
+    return examples[:split_idx], examples[split_idx:]
 
 
 def load_configs(config_path):

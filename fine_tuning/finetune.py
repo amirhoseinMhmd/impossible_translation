@@ -16,7 +16,14 @@ from tqdm import tqdm
 # Add parent directory to path to allow imports from utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.utils import load_sentences_from_file, save_dataset, load_configs, get_device
+from utils.utils import (
+    load_sentences_from_file,
+    save_dataset,
+    load_configs,
+    get_device,
+    apply_training_seed,
+    split_training_data,
+)
 from utils.reverse import partial_reverse_batch
 from utils.hop import wordhop_batch
 from utils.shuffle import local_shuffle_batch, local_shuffle_batch_with_window, full_shuffle_batch
@@ -40,11 +47,12 @@ def generate_training_data(input_file, type_of_perturbation):
     return training_data
 
 
-def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128):
-    # Split into train and eval
-    split_idx = int(len(training_data) * train_split)
-    train_data = training_data[:split_idx]
-    eval_data = training_data[split_idx:]
+def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128, split_seed=None):
+    train_data, eval_data = split_training_data(
+        training_data,
+        train_split=train_split,
+        split_seed=split_seed,
+    )
 
     def process_data(data):
         """Process data with masked labels."""
@@ -153,6 +161,8 @@ def train_model(
 
 
 def main(config, input_file, model_name, type_of_perturbation):
+    apply_training_seed(config)
+    max_length = config.get('data_arguments', {}).get('max_length', 128)
     OUTPUT_DIR = config.get('training_arguments', {}).get('output_dir', None)
     if not OUTPUT_DIR:
         raise ValueError("Output directory must be specified in training_arguments.output_dir")
@@ -178,7 +188,8 @@ def main(config, input_file, model_name, type_of_perturbation):
     train_dataset, eval_dataset = prepare_dataset(
         training_data,
         tokenizer,
-        max_length=128
+        max_length=max_length,
+        split_seed=config.get('training_arguments', {}).get('data_seed'),
     )
     print(f"Train samples: {len(train_dataset)}")
     print(f"Eval samples: {len(eval_dataset)}")

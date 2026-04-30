@@ -67,3 +67,6 @@ training_arguments:
   prediction_loss_only: false
 #  early_stopping_patience: 3
 #  early_stopping_threshold: 0.001
+
+data_arguments:
+  max_length: 128
