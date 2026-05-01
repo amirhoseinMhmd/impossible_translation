@@ -423,7 +423,9 @@ def train_model(
     print("Starting training...")
     trainer.train()
     trainer.save_full_samples("final")
-    print(f"Saved full samples to {output_dir}")
+    trainer.save_model(f'{output_dir}/model')
+    tokenizer.save_pretrained(f'{output_dir}/model')
+    print(f"Saved full samples and final model to {output_dir}")
 
     return model, tokenizer
 
