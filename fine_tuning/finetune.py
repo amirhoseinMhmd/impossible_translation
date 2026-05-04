@@ -48,6 +48,95 @@ def generate_training_data(input_file, type_of_perturbation):
     return training_data
 
 
+def normalize_sample_examples(data):
+    sample_examples = []
+
+    for index, item in enumerate(data):
+        if isinstance(item, (list, tuple)):
+            if len(item) != 2:
+                raise ValueError(
+                    f"Sample example at index {index} must contain exactly two items, "
+                    f"got {len(item)}."
+                )
+            input_text, actual_text = item
+        elif isinstance(item, dict):
+            if "input" in item and "actual" in item:
+                input_text, actual_text = item["input"], item["actual"]
+            elif "corrupted" in item and "correct" in item:
+                input_text, actual_text = item["corrupted"], item["correct"]
+            else:
+                raise ValueError(
+                    f"Unsupported sample example format at index {index}: {item.keys()}"
+                )
+        else:
+            raise ValueError(
+                f"Unsupported sample example type at index {index}: {type(item).__name__}"
+            )
+
+        sample_examples.append((input_text, actual_text))
+
+    return sample_examples
+
+
+def load_or_generate_sample_examples(sample_path, type_of_perturbation, cache_path=None):
+    sample_path = Path(sample_path)
+
+    if not sample_path.exists():
+        raise FileNotFoundError(f"Sample dataset not found: {sample_path}")
+
+    if sample_path.suffix.lower() == ".json":
+        with open(sample_path, "r", encoding="utf-8") as handle:
+            sample_data = json.load(handle)
+        return normalize_sample_examples(sample_data), sample_path.stem
+
+    cache_file = Path(cache_path) if cache_path else Path(
+        f"./sample_data_{sample_path.stem}_{type_of_perturbation}.json"
+    )
+
+    if cache_file.exists():
+        print(f"Loading cached sample data from {cache_file.resolve()}...")
+        with open(cache_file, "r", encoding="utf-8") as handle:
+            sample_data = json.load(handle)
+    else:
+        print(
+            f"Generating sample data from {sample_path} "
+            f"using perturbation {type_of_perturbation}..."
+        )
+        sample_data = generate_training_data(
+            input_file=str(sample_path),
+            type_of_perturbation=type_of_perturbation,
+        )
+        save_dataset(sample_data, cache_file)
+
+    return normalize_sample_examples(sample_data), sample_path.stem
+
+
+def resolve_sample_examples(
+        config,
+        type_of_perturbation,
+        default_examples,
+        default_dataset_name,
+):
+    sample_config = config.get("sample_arguments", {})
+    sample_path = sample_config.get("path")
+
+    if not sample_path:
+        print("Using the training eval split for checkpoint full samples.")
+        return default_examples, default_dataset_name
+
+    sample_examples, inferred_dataset_name = load_or_generate_sample_examples(
+        sample_path=sample_path,
+        type_of_perturbation=type_of_perturbation,
+        cache_path=sample_config.get("cache_path"),
+    )
+    dataset_name = sample_config.get("dataset_name") or inferred_dataset_name
+    print(
+        f"Using {len(sample_examples)} examples from {Path(sample_path).resolve()} "
+        f"for checkpoint full samples."
+    )
+    return sample_examples, dataset_name
+
+
 def process_single_chunk(input_text, tokenizer, model, max_position_embeddings):
     prompt = f"Fix this text: {input_text}\nCorrected:"
 
@@ -381,10 +470,10 @@ def prepare_dataset(training_data, tokenizer, train_split=0.9, max_length=128, s
 def train_model(
         train_dataset,
         eval_dataset,
-        eval_examples,
+        sample_examples,
         config,
         model_name,
-        dataset_name,
+        sample_dataset_name,
         type_of_perturbation,
         output_dir='./gpt2-reversal',
 ):
@@ -414,9 +503,9 @@ def train_model(
         eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         export_tokenizer=tokenizer,
-        sample_examples=eval_examples,
+        sample_examples=sample_examples,
         sample_output_dir=output_dir,
-        sample_output_prefix=f"full_samples_{dataset_name}_{type_of_perturbation}",
+        sample_output_prefix=f"full_samples_{sample_dataset_name}_{type_of_perturbation}",
         sample_batch_size=sample_batch_size,
     )
 
@@ -464,13 +553,20 @@ def main(config, input_file, model_name, type_of_perturbation):
     print(f"Train samples: {len(train_dataset)}")
     print(f"Eval samples: {len(eval_dataset)}")
 
+    sample_examples, sample_dataset_name = resolve_sample_examples(
+        config=config,
+        type_of_perturbation=type_of_perturbation,
+        default_examples=eval_examples,
+        default_dataset_name=Path(input_file).stem,
+    )
+
     train_model(
         train_dataset,
         eval_dataset,
-        eval_examples,
+        sample_examples,
         config,
         model_name=model_name,
-        dataset_name=Path(input_file).stem,
+        sample_dataset_name=sample_dataset_name,
         type_of_perturbation=type_of_perturbation,
         output_dir=OUTPUT_DIR)
 

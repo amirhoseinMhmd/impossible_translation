@@ -43,3 +43,6 @@ data_arguments:
 
 sample_arguments:
   batch_size: 64
+  path: null
+  dataset_name: null
+  cache_path: null
