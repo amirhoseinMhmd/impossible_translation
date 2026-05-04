@@ -78,7 +78,7 @@ def normalize_sample_examples(data):
     return sample_examples
 
 
-def load_or_generate_sample_examples(sample_path, type_of_perturbation, cache_path=None):
+def load_or_generate_sample_examples(sample_path, type_of_perturbation):
     sample_path = Path(sample_path)
 
     if not sample_path.exists():
@@ -89,12 +89,12 @@ def load_or_generate_sample_examples(sample_path, type_of_perturbation, cache_pa
             sample_data = json.load(handle)
         return normalize_sample_examples(sample_data), sample_path.stem
 
-    cache_file = Path(cache_path) if cache_path else Path(
-        f"./sample_data_{sample_path.stem}_{type_of_perturbation}.json"
+    cache_file = Path(
+        f"./test_data_{sample_path.stem}_{type_of_perturbation}.json"
     )
 
     if cache_file.exists():
-        print(f"Loading cached sample data from {cache_file.resolve()}...")
+        print(f"Loading sample data from {cache_file.resolve()}...")
         with open(cache_file, "r", encoding="utf-8") as handle:
             sample_data = json.load(handle)
     else:
@@ -127,14 +127,12 @@ def resolve_sample_examples(
     sample_examples, inferred_dataset_name = load_or_generate_sample_examples(
         sample_path=sample_path,
         type_of_perturbation=type_of_perturbation,
-        cache_path=sample_config.get("cache_path"),
     )
-    dataset_name = sample_config.get("dataset_name") or inferred_dataset_name
     print(
         f"Using {len(sample_examples)} examples from {Path(sample_path).resolve()} "
         f"for checkpoint full samples."
     )
-    return sample_examples, dataset_name
+    return sample_examples, inferred_dataset_name
 
 
 def process_single_chunk(input_text, tokenizer, model, max_position_embeddings):
