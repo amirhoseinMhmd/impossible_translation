@@ -29,6 +29,7 @@ METRIC_LABELS = {
 }
 
 CHECKPOINT_METRICS = ["exact_match", "BLEU"]
+LOG_Y_FLOOR = 1e-3
 
 
 def checkpoint_sort_key(checkpoint_name):
@@ -312,6 +313,9 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
 
         for index, (perturbation, metric_name, files) in enumerate(series):
             checkpoints, means, mins, maxs = summarize_checkpoint_group(files)
+            means = np.clip(np.array(means, dtype=float), LOG_Y_FLOOR, None)
+            mins = np.clip(np.array(mins, dtype=float), LOG_Y_FLOOR, None)
+            maxs = np.clip(np.array(maxs, dtype=float), LOG_Y_FLOOR, None)
             color = COLORS[index % len(COLORS)]
             marker = MARKERS[index % len(MARKERS)]
             linestyle = LINESTYLES[index % len(LINESTYLES)]
@@ -345,8 +349,8 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
 
         ax.set_xlabel("Checkpoint")
         ax.set_ylabel("Average Score")
-        ax.set_ylim(0, 1.0)
-        ax.yaxis.set_major_locator(mticker.MultipleLocator(0.1))
+        ax.set_yscale("log")
+        ax.set_ylim(LOG_Y_FLOOR, 1.0)
         ax.margins(x=0.02, y=0.03)
 
         title = format_dataset_label(dataset)
