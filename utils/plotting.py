@@ -315,15 +315,9 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
             color = COLORS[index % len(COLORS)]
             marker = MARKERS[index % len(MARKERS)]
             linestyle = LINESTYLES[index % len(LINESTYLES)]
+            lower_errors = np.array(means) - np.array(mins)
+            upper_errors = np.array(maxs) - np.array(means)
 
-            ax.fill_between(
-                checkpoints,
-                mins,
-                maxs,
-                color=color,
-                alpha=0.14,
-                linewidth=0,
-            )
             ax.plot(
                 checkpoints,
                 means,
@@ -336,6 +330,17 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
                 markeredgecolor="white",
                 label=f"{format_perturbation_label(perturbation)} {format_metric_short(metric_name)}",
                 alpha=0.95,
+            )
+            ax.errorbar(
+                checkpoints,
+                means,
+                yerr=[lower_errors, upper_errors],
+                fmt="none",
+                ecolor=color,
+                elinewidth=2.2,
+                capsize=0,
+                alpha=0.95,
+                zorder=2,
             )
 
         ax.set_xlabel("Checkpoint")
