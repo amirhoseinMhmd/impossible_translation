@@ -1,21 +1,40 @@
-
 import json
+import os
 import spacy
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
+GPU_ENABLED = False
+NLP_MODEL_NAME = "en_core_web_sm"
+
+try:
+    GPU_ENABLED = spacy.prefer_gpu()
+except Exception:
+    GPU_ENABLED = False
+
 try:
     nlp = spacy.load("en_core_web_trf")
+    NLP_MODEL_NAME = "en_core_web_trf"
 except OSError:
     nlp = spacy.load("en_core_web_sm")
+    NLP_MODEL_NAME = "en_core_web_sm"
 
 # Special tokens inserted by perturbation functions — excluded from token mapping
 SPECIAL_TOKENS = {"R", "S", "P"}
 
+DEFAULT_PIPE_BATCH_SIZE = int(os.environ.get("SPACY_PIPE_BATCH_SIZE", "64"))
 
-def extract_dependencies(text):
-    doc = nlp(text)
+
+def get_nlp_runtime_info():
+    return {
+        "model_name": NLP_MODEL_NAME,
+        "gpu_enabled": GPU_ENABLED,
+        "default_batch_size": DEFAULT_PIPE_BATCH_SIZE,
+    }
+
+
+def extract_dependencies_from_doc(doc):
     arcs = []
     for token in doc:
         arcs.append({
@@ -29,14 +48,17 @@ def extract_dependencies(text):
     return arcs
 
 
+def extract_dependencies(text):
+    return extract_dependencies_from_doc(nlp(text))
+
+
 def avg_dependency_length(arcs):
     lengths = [a["arc_length"] for a in arcs if a["dep_rel"] != "ROOT"]
     return np.mean(lengths) if lengths else 0.0
 
 
-def get_dep_triples(text):
+def get_dep_triples_from_doc(doc):
     """Returns a set of (dependent, dep_rel, head) triples."""
-    doc = nlp(text)
     triples = set()
     for token in doc:
         if token.dep_ != "ROOT":
@@ -44,13 +66,21 @@ def get_dep_triples(text):
     return triples
 
 
-def compare_dependencies(actual_text, prediction_text):
+def get_dep_triples(text):
+    return get_dep_triples_from_doc(nlp(text))
+
+
+def compare_dependencies(actual_text, prediction_text, actual_doc=None, prediction_doc=None):
     """
     Compares dependency triples between actual and prediction.
     Returns precision, recall, F1 of recovered dependency arcs.
     """
-    actual_triples = get_dep_triples(actual_text)
-    pred_triples = get_dep_triples(prediction_text)
+    if actual_doc is None:
+        actual_doc = nlp(actual_text)
+    if prediction_doc is None:
+        prediction_doc = nlp(prediction_text)
+    actual_triples = get_dep_triples_from_doc(actual_doc)
+    pred_triples = get_dep_triples_from_doc(prediction_doc)
 
     if not actual_triples or not pred_triples:
         return {"precision": 0, "recall": 0, "f1": 0,
@@ -93,13 +123,13 @@ def _build_token_mapping(actual_tokens, perturbed_tokens):
     return mapping
 
 
-def compute_perturbed_adl(actual_text, perturbed_text):
+def compute_perturbed_adl(actual_text, perturbed_text, actual_doc=None):
     """
     Computes ADL of the perturbed string by remapping the original parse arcs
     to their new positions. Valid for pure reordering perturbations
     (LocalShuffle, PartialReverse). For WordHOP, returns None.
     """
-    doc = nlp(actual_text)
+    doc = actual_doc if actual_doc is not None else nlp(actual_text)
     actual_tokens = [t.text for t in doc]
     perturbed_tokens = perturbed_text.split()
 
@@ -117,7 +147,7 @@ def compute_perturbed_adl(actual_text, perturbed_text):
     return round(np.mean(lengths), 3) if lengths else 0.0
 
 
-def compute_perturbed_baseline_f1(actual_text, perturbed_text):
+def compute_perturbed_baseline_f1(actual_text, perturbed_text, actual_doc=None):
     """
     Computes baseline Triple F1 for the perturbed input without parsing
     the scrambled text. A dependency triple (dep, rel, head) from the original
@@ -125,7 +155,7 @@ def compute_perturbed_baseline_f1(actual_text, perturbed_text):
     present and their relative order (dep before/after head) is unchanged.
     Returns precision, recall, F1 against the original triple set.
     """
-    doc = nlp(actual_text)
+    doc = actual_doc if actual_doc is not None else nlp(actual_text)
     actual_tokens = [t.text for t in doc]
     perturbed_tokens = perturbed_text.split()
 
@@ -168,7 +198,18 @@ def compute_perturbed_baseline_f1(actual_text, perturbed_text):
     }
 
 
-def analyze_sample(sample, wordhop=False):
+def parse_texts(texts, batch_size=None, desc="Parsing"):
+    effective_batch_size = batch_size or DEFAULT_PIPE_BATCH_SIZE
+    return list(
+        tqdm(
+            nlp.pipe(texts, batch_size=effective_batch_size),
+            total=len(texts),
+            desc=desc,
+        )
+    )
+
+
+def analyze_sample(sample, wordhop=False, prediction_doc=None, actual_doc=None):
     """
     wordhop=True: skips remapping-based input metrics since WordHOP alters
     token vocabulary (lemmatization), making position mapping unreliable.
@@ -177,8 +218,13 @@ def analyze_sample(sample, wordhop=False):
     prediction = sample["prediction"]
     actual = sample["actual"]
 
-    pred_arcs = extract_dependencies(prediction)
-    actual_arcs = extract_dependencies(actual)
+    if prediction_doc is None:
+        prediction_doc = nlp(prediction)
+    if actual_doc is None:
+        actual_doc = nlp(actual)
+
+    pred_arcs = extract_dependencies_from_doc(prediction_doc)
+    actual_arcs = extract_dependencies_from_doc(actual_doc)
 
     adl_pred = avg_dependency_length(pred_arcs)
     adl_actual = avg_dependency_length(actual_arcs)
@@ -190,10 +236,19 @@ def analyze_sample(sample, wordhop=False):
         input_comparison = {"precision": None, "recall": None, "f1": None,
                             "matched": None, "actual_count": None, "pred_count": None}
     else:
-        adl_input = compute_perturbed_adl(actual, input_text)
-        input_comparison = compute_perturbed_baseline_f1(actual, input_text)
+        adl_input = compute_perturbed_adl(actual, input_text, actual_doc=actual_doc)
+        input_comparison = compute_perturbed_baseline_f1(
+            actual,
+            input_text,
+            actual_doc=actual_doc,
+        )
 
-    dep_comparison = compare_dependencies(actual, prediction)
+    dep_comparison = compare_dependencies(
+        actual,
+        prediction,
+        actual_doc=actual_doc,
+        prediction_doc=prediction_doc,
+    )
 
     return {
         "input": input_text,
@@ -207,10 +262,32 @@ def analyze_sample(sample, wordhop=False):
     }
 
 
-def analyze_dataset(data, wordhop=False):
+def analyze_dataset(data, wordhop=False, batch_size=None):
     results = []
-    for i, sample in enumerate(tqdm(data)):
-        result = analyze_sample(sample, wordhop=wordhop)
+    predictions = [sample["prediction"] for sample in data]
+    actuals = [sample["actual"] for sample in data]
+
+    combined_docs = parse_texts(
+        predictions + actuals,
+        batch_size=batch_size,
+        desc="Parsing predictions and references",
+    )
+    prediction_docs = combined_docs[:len(predictions)]
+    actual_docs = combined_docs[len(predictions):]
+
+    for i, (sample, prediction_doc, actual_doc) in enumerate(
+        tqdm(
+            zip(data, prediction_docs, actual_docs),
+            total=len(data),
+            desc="Computing dependency metrics",
+        )
+    ):
+        result = analyze_sample(
+            sample,
+            wordhop=wordhop,
+            prediction_doc=prediction_doc,
+            actual_doc=actual_doc,
+        )
         result["sample_id"] = i
         results.append(result)
 
@@ -261,13 +338,32 @@ if __name__ == "__main__":
                         default="experiments/full-samples")
     parser.add_argument("--output_dir",
                         default="dep-results")
-    parser.add_argument("--perturbation", choices=["localShuffle", "partialReverse", "wordHop", "all"],
-                        default="all")
+    parser.add_argument(
+        "--perturbation",
+        choices=[
+            "localShuffle",
+            "localShuffle3",
+            "localShuffle5",
+            "fullShuffle",
+            "partialReverse",
+            "wordHop",
+            "all",
+        ],
+        default="all",
+    )
+    parser.add_argument("--batch_size", type=int, default=DEFAULT_PIPE_BATCH_SIZE)
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    perturbations = ["localShuffle", "partialReverse", "wordHop"] \
+    runtime_info = get_nlp_runtime_info()
+    print(
+        f"spaCy model: {runtime_info['model_name']} | "
+        f"GPU enabled: {runtime_info['gpu_enabled']} | "
+        f"batch size: {args.batch_size}"
+    )
+
+    perturbations = ["localShuffle", "localShuffle3", "localShuffle5", "fullShuffle", "partialReverse", "wordHop"] \
         if args.perturbation == "all" else [args.perturbation]
 
     for perturbation in perturbations:
@@ -291,7 +387,11 @@ if __name__ == "__main__":
             with open(input_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            results, summary = analyze_dataset(data, wordhop=wordhop)
+            results, summary = analyze_dataset(
+                data,
+                wordhop=wordhop,
+                batch_size=args.batch_size,
+            )
 
             for k, v in summary.items():
                 print(f"  {k}: {v}")

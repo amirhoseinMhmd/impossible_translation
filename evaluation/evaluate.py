@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from evaluation.bleu import bleu_score
 from evaluation.exact_match import exact_match
-from evaluation.parsing import analyze_dataset
+from evaluation.parsing import analyze_dataset, get_nlp_runtime_info
 
 PERTURBATIONS = [
     "partialReverse",
@@ -122,7 +122,7 @@ def build_detail_rows(analysis_results):
     return rows
 
 
-def evaluate_full_samples_file(file_path, output_dir):
+def evaluate_full_samples_file(file_path, output_dir, batch_size=None):
     metadata = parse_full_samples_filename(file_path)
 
     with Path(file_path).open("r", encoding="utf-8") as handle:
@@ -136,6 +136,7 @@ def evaluate_full_samples_file(file_path, output_dir):
     analysis_results, dependency_summary = analyze_dataset(
         data,
         wordhop=metadata["perturbation"] == "wordHop",
+        batch_size=batch_size,
     )
 
     detail_rows = build_detail_rows(analysis_results)
@@ -231,7 +232,7 @@ def save_group_results(group_summaries, output_dir):
         print(f"\nSaved aggregated results for {dataset} / {perturbation}")
 
 
-def evaluate_checkpoint_folder(input_dir, output_dir, perturbation="all", dataset=None):
+def evaluate_checkpoint_folder(input_dir, output_dir, perturbation="all", dataset=None, batch_size=None):
     files = find_full_sample_files(
         input_dir=input_dir,
         perturbation=perturbation,
@@ -245,7 +246,10 @@ def evaluate_checkpoint_folder(input_dir, output_dir, perturbation="all", datase
         )
 
     print(f"Found {len(files)} full-sample files to evaluate.")
-    summaries = [evaluate_full_samples_file(file_path, output_dir) for file_path in files]
+    summaries = [
+        evaluate_full_samples_file(file_path, output_dir, batch_size=batch_size)
+        for file_path in files
+    ]
     save_group_results(summaries, output_dir)
     return summaries
 
@@ -283,13 +287,27 @@ def main():
         default=None,
         help="Optional dataset name filter parsed from the full_samples filename.",
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=get_nlp_runtime_info()["default_batch_size"],
+        help="spaCy pipe batch size for dependency parsing.",
+    )
     args = parser.parse_args()
+
+    runtime_info = get_nlp_runtime_info()
+    print(
+        f"spaCy model: {runtime_info['model_name']} | "
+        f"GPU enabled: {runtime_info['gpu_enabled']} | "
+        f"batch size: {args.batch_size}"
+    )
 
     evaluate_checkpoint_folder(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
         perturbation=args.perturbation,
         dataset=args.dataset,
+        batch_size=args.batch_size,
     )
 
 
