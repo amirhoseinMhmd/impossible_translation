@@ -135,6 +135,16 @@ def resolve_sample_examples(
     return sample_examples, inferred_dataset_name
 
 
+def apply_cli_overrides(config, output_dir=None, seed=None):
+    training_config = config.setdefault("training_arguments", {})
+
+    if output_dir is not None:
+        training_config["output_dir"] = output_dir
+
+    if seed is not None:
+        training_config["seed"] = seed
+
+
 def process_single_chunk(input_text, tokenizer, model, max_position_embeddings):
     prompt = f"Fix this text: {input_text}\nCorrected:"
 
@@ -578,9 +588,18 @@ if __name__ == "__main__":
                         help="Path to YAML configuration file")
     parser.add_argument('-t', '--type', type=str, required=True,
                         help="Type of perturbation (wordHop, partialReverse, localShuffle3, localShuffle5, fullShuffle etc.)")
+    parser.add_argument('-o', '--output_dir', type=str, required=True,
+                        help="Output directory for full samples and the final model")
+    parser.add_argument('--seed', type=int, required=True,
+                        help="Training seed override")
 
     args = parser.parse_args()
     config = load_configs(args.config)
+    apply_cli_overrides(
+        config,
+        output_dir=args.output_dir,
+        seed=args.seed,
+    )
     if args.type == 'wordHop':
         model = 'mission-impossible-lms/word-hop-gpt2'
     elif args.type == 'partialReverse':
