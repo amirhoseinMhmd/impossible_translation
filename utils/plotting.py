@@ -5,11 +5,12 @@ from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.plot import COLORS, setup_acl_style
+from utils.plot import COLORS, LINESTYLES, MARKERS, setup_acl_style
 
 PERTURBATIONS = [
     "partialReverse",
@@ -27,6 +28,8 @@ METRIC_LABELS = {
     "avg_dependency_length": "Average Dependency Length",
 }
 
+CHECKPOINT_METRICS = ["exact_match", "BLEU"]
+
 
 def checkpoint_sort_key(checkpoint_name):
     if checkpoint_name == "final":
@@ -39,6 +42,16 @@ def checkpoint_sort_key(checkpoint_name):
             return (0, checkpoint_name)
 
     return (0, checkpoint_name)
+
+
+def checkpoint_number(checkpoint_name):
+    if not checkpoint_name.startswith("checkpoint-"):
+        return None
+
+    try:
+        return int(checkpoint_name.split("-", 1)[1])
+    except ValueError:
+        return None
 
 
 def parse_metric_filename(file_path, metric_name):
@@ -79,15 +92,7 @@ def find_metric_files(inputs, metric_name):
                 files.append(path)
             continue
 
-        direct_matches = sorted(path.rglob(expected_name))
-        if direct_matches:
-            files.extend(direct_matches)
-            continue
-
-        for run_dir in sorted(child for child in path.iterdir() if child.is_dir()):
-            evaluation_dir = run_dir / "evaluation"
-            if evaluation_dir.is_dir():
-                files.extend(sorted(evaluation_dir.rglob(expected_name)))
+        files.extend(sorted(path.rglob(expected_name)))
 
     if not files:
         raise FileNotFoundError(
@@ -97,9 +102,13 @@ def find_metric_files(inputs, metric_name):
     return sorted(set(files))
 
 
-def load_metric_value(file_path, checkpoint="final"):
+def load_metric_json(file_path):
     with Path(file_path).open("r", encoding="utf-8") as handle:
-        data = json.load(handle)
+        return json.load(handle)
+
+
+def load_metric_value(file_path, checkpoint="final"):
+    data = load_metric_json(file_path)
 
     if isinstance(data, (int, float)):
         return float(data)
@@ -144,14 +153,24 @@ def format_dataset_label(label):
 
 def format_perturbation_label(label):
     mapping = {
-        "partialReverse": "PartialReverse",
-        "localShuffle": "LocalShuffle",
-        "localShuffle3": "LocalShuffle3",
-        "localShuffle5": "LocalShuffle5",
-        "fullShuffle": "FullShuffle",
-        "wordHop": "WordHop",
+        "partialReverse": "partial reverse",
+        "localShuffle": "local shuffle",
+        "localShuffle3": "local shuffle 3",
+        "localShuffle5": "local shuffle 5",
+        "fullShuffle": "full shuffle",
+        "wordHop": "word hop",
     }
     return mapping.get(label, label)
+
+
+def format_metric_short(metric_name):
+    mapping = {
+        "exact_match": "EM",
+        "BLEU": "BLEU",
+        "dep_f1": "dep F1",
+        "avg_dependency_length": "ADL",
+    }
+    return mapping.get(metric_name, metric_name)
 
 
 def plot_seed_bar_chart(grouped_scores, metric_name, output_file, error_bar="std", title=""):
@@ -231,50 +250,116 @@ def plot_seed_bar_chart(grouped_scores, metric_name, output_file, error_bar="std
     plt.close(fig)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Create a bar plot with seed error bars from evaluation result JSON files."
-    )
-    parser.add_argument(
-        "-i",
-        "--inputs",
-        nargs="+",
-        required=True,
-        help="Result directories or result JSON files from different seeds.",
-    )
-    parser.add_argument(
-        "-m",
-        "--metric",
-        required=True,
-        choices=sorted(METRIC_LABELS),
-        help="Metric to plot.",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        default=None,
-        help="Output PNG file path. A PDF is also saved automatically when using .png.",
-    )
-    parser.add_argument(
-        "--checkpoint",
-        default="final",
-        help="Checkpoint key to read from the results JSON. Defaults to final.",
-    )
-    parser.add_argument(
-        "--error-bar",
-        default="std",
-        choices=["std", "sem"],
-        help="Error bar type across seeds.",
-    )
-    parser.add_argument(
-        "--title",
-        default="",
-        help="Optional figure title.",
-    )
-    args = parser.parse_args()
+def aggregate_checkpoint_runs(metric_files):
+    grouped = defaultdict(list)
 
-    setup_acl_style()
+    for file_path in metric_files:
+        metric_name = None
+        for candidate in CHECKPOINT_METRICS:
+            if str(file_path).endswith(f"_{candidate}.json"):
+                metric_name = candidate
+                break
 
+        if metric_name is None:
+            continue
+
+        dataset, perturbation = parse_metric_filename(file_path, metric_name)
+        grouped[(dataset, perturbation, metric_name)].append(Path(file_path))
+
+    return grouped
+
+
+def summarize_checkpoint_group(files):
+    checkpoint_values = defaultdict(list)
+
+    for file_path in files:
+        data = load_metric_json(file_path)
+        if not isinstance(data, dict):
+            continue
+
+        for checkpoint_name, value in data.items():
+            if checkpoint_name == "final":
+                continue
+            checkpoint_id = checkpoint_number(checkpoint_name)
+            if checkpoint_id is None:
+                continue
+            checkpoint_values[checkpoint_id].append(float(value))
+
+    if not checkpoint_values:
+        raise ValueError(f"No checkpoint series found in: {files}")
+
+    checkpoints = sorted(checkpoint_values)
+    means = [float(np.mean(checkpoint_values[checkpoint])) for checkpoint in checkpoints]
+    mins = [float(np.min(checkpoint_values[checkpoint])) for checkpoint in checkpoints]
+    maxs = [float(np.max(checkpoint_values[checkpoint])) for checkpoint in checkpoints]
+
+    return checkpoints, means, mins, maxs
+
+
+def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
+    datasets = sorted({dataset for dataset, _, _ in grouped_runs})
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for dataset in datasets:
+        fig, ax = plt.subplots(figsize=(4.8, 4.8))
+        series = [
+            (perturbation, metric_name, grouped_runs[(dataset, perturbation, metric_name)])
+            for perturbation in PERTURBATIONS
+            for metric_name in CHECKPOINT_METRICS
+            if (dataset, perturbation, metric_name) in grouped_runs
+        ]
+
+        for index, (perturbation, metric_name, files) in enumerate(series):
+            checkpoints, means, mins, maxs = summarize_checkpoint_group(files)
+            color = COLORS[index % len(COLORS)]
+            marker = MARKERS[index % len(MARKERS)]
+            linestyle = LINESTYLES[index % len(LINESTYLES)]
+
+            ax.fill_between(
+                checkpoints,
+                mins,
+                maxs,
+                color=color,
+                alpha=0.14,
+                linewidth=0,
+            )
+            ax.plot(
+                checkpoints,
+                means,
+                color=color,
+                marker=marker,
+                linestyle=linestyle,
+                linewidth=1.8,
+                markersize=5,
+                markeredgewidth=0.5,
+                markeredgecolor="white",
+                label=f"{format_perturbation_label(perturbation)} {format_metric_short(metric_name)}",
+                alpha=0.95,
+            )
+
+        ax.set_xlabel("Checkpoint")
+        ax.set_ylabel("Average Score")
+        ax.set_ylim(0, 1.0)
+        ax.yaxis.set_major_locator(mticker.MultipleLocator(0.1))
+        ax.margins(x=0.02, y=0.03)
+
+        title = format_dataset_label(dataset)
+        if title_prefix:
+            title = f"{title_prefix} {title}".strip()
+        if title:
+            ax.set_title(title)
+        ax.legend(loc="lower right")
+
+        fig.tight_layout()
+        output_png = output_dir / f"{dataset}_checkpoint_plot.png"
+        fig.savefig(output_png, dpi=400, bbox_inches="tight", facecolor="white")
+        fig.savefig(output_png.with_suffix(".pdf"), dpi=400, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        print(f"Saved plot to {output_png}")
+
+
+def run_bar_mode(args):
     metric_files = find_metric_files(args.inputs, args.metric)
     grouped_scores = build_metric_groups(
         metric_files,
@@ -297,6 +382,80 @@ def main():
         title=args.title,
     )
     print(f"Saved plot to {output_file}")
+
+
+def run_checkpoint_mode(args):
+    metric_files = []
+    for metric_name in CHECKPOINT_METRICS:
+        metric_files.extend(find_metric_files(args.inputs, metric_name))
+
+    grouped_runs = aggregate_checkpoint_runs(metric_files)
+    output_dir = args.output_dir or "checkpoint_plots"
+    plot_checkpoint_language_curves(grouped_runs, output_dir=output_dir, title_prefix=args.title)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Plot evaluation results across seeds."
+    )
+    parser.add_argument(
+        "--plot-type",
+        default="checkpoint",
+        choices=["checkpoint", "bar"],
+        help="Choose a checkpoint curve plot or a seed bar plot.",
+    )
+    parser.add_argument(
+        "-i",
+        "--inputs",
+        nargs="+",
+        required=True,
+        help="Result directories or result JSON files from different seeds.",
+    )
+    parser.add_argument(
+        "--title",
+        default="",
+        help="Optional figure title prefix.",
+    )
+
+    parser.add_argument(
+        "-m",
+        "--metric",
+        choices=sorted(METRIC_LABELS),
+        help="Metric to plot in bar mode.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Output PNG file path for bar mode.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory for checkpoint mode.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default="final",
+        help="Checkpoint key to read in bar mode. Defaults to final.",
+    )
+    parser.add_argument(
+        "--error-bar",
+        default="std",
+        choices=["std", "sem"],
+        help="Error bar type across seeds in bar mode.",
+    )
+    args = parser.parse_args()
+
+    setup_acl_style()
+
+    if args.plot_type == "bar":
+        if not args.metric:
+            parser.error("--metric is required when --plot-type=bar")
+        run_bar_mode(args)
+        return
+
+    run_checkpoint_mode(args)
 
 
 if __name__ == "__main__":
