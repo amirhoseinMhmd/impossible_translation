@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+from matplotlib.ticker import FuncFormatter, MultipleLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -29,7 +30,6 @@ METRIC_LABELS = {
 }
 
 CHECKPOINT_METRICS = ["exact_match", "BLEU"]
-LOG_Y_FLOOR = 1e-3
 
 
 def checkpoint_sort_key(checkpoint_name):
@@ -313,9 +313,9 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
 
         for index, (perturbation, metric_name, files) in enumerate(series):
             checkpoints, means, mins, maxs = summarize_checkpoint_group(files)
-            means = np.clip(np.array(means, dtype=float), LOG_Y_FLOOR, None)
-            mins = np.clip(np.array(mins, dtype=float), LOG_Y_FLOOR, None)
-            maxs = np.clip(np.array(maxs, dtype=float), LOG_Y_FLOOR, None)
+            means = np.array(means, dtype=float)
+            mins = np.array(mins, dtype=float)
+            maxs = np.array(maxs, dtype=float)
             color = COLORS[index % len(COLORS)]
             marker = MARKERS[index % len(MARKERS)]
             linestyle = LINESTYLES[index % len(LINESTYLES)]
@@ -349,8 +349,11 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
 
         ax.set_xlabel("Checkpoint")
         ax.set_ylabel("Average Score")
-        ax.set_yscale("log")
-        ax.set_ylim(LOG_Y_FLOOR, 1.0)
+        ax.set_yscale("function", functions=(np.cbrt, lambda x: x ** 3))
+        ax.set_yticks(np.arange(0, 1.0, 0.1))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda y, _: f"{y:.1f}"))
+        ax.yaxis.set_minor_locator(MultipleLocator(0.01))
+        ax.set_ylim(0, 1.0)
         ax.margins(x=0.02, y=0.03)
 
         title = format_dataset_label(dataset)
