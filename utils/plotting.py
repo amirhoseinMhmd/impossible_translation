@@ -459,7 +459,6 @@ def plot_adl_language_curves(grouped_adl_runs, output_dir, title_prefix=""):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for dataset in datasets:
-        fig, ax = plt.subplots(figsize=(4.8, 4.8))
         series = [
             perturbation
             for perturbation in PERTURBATIONS
@@ -469,6 +468,7 @@ def plot_adl_language_curves(grouped_adl_runs, output_dir, title_prefix=""):
             )
         ]
 
+        series_data = []
         actual_reference = None
 
         for index, perturbation in enumerate(series):
@@ -490,68 +490,155 @@ def plot_adl_language_curves(grouped_adl_runs, output_dir, title_prefix=""):
             if actual_reference is None:
                 actual_reference = summaries[0]["actual_mean"]
 
-            color = COLORS[index % len(COLORS)]
-            marker = MARKERS[index % len(MARKERS)]
-            linestyle = LINESTYLES[index % len(LINESTYLES)]
-            lower_errors = prediction_means - prediction_mins
-            upper_errors = prediction_maxs - prediction_means
+            series_data.append({
+                "perturbation": perturbation,
+                "checkpoints": checkpoints,
+                "prediction_means": prediction_means,
+                "prediction_mins": prediction_mins,
+                "prediction_maxs": prediction_maxs,
+                "input_reference": input_reference,
+                "color": COLORS[index % len(COLORS)],
+                "marker": MARKERS[index % len(MARKERS)],
+                "linestyle": LINESTYLES[index % len(LINESTYLES)],
+            })
 
-            if input_reference is not None:
-                ax.axhline(
-                    y=input_reference,
-                    color=color,
-                    linestyle=":",
-                    linewidth=1.1,
-                    alpha=0.7,
-                    zorder=1,
-                    label=f"input {format_perturbation_label(perturbation)}",
-                )
+        lower_values = []
+        upper_reference_values = []
 
-            ax.plot(
-                checkpoints,
-                prediction_means,
-                color=color,
-                marker=marker,
-                linestyle=linestyle,
-                linewidth=1.8,
-                markersize=5,
-                markeredgewidth=0.5,
-                markeredgecolor="white",
-                label=f"pred. {format_perturbation_label(perturbation)}",
-                alpha=0.95,
-            )
-            ax.errorbar(
-                checkpoints,
-                prediction_means,
-                yerr=[lower_errors, upper_errors],
-                fmt="none",
-                ecolor=color,
-                elinewidth=2.2,
-                capsize=0,
-                alpha=0.95,
-                zorder=2,
-            )
+        for item in series_data:
+            lower_values.extend(item["prediction_mins"].tolist())
+            lower_values.extend(item["prediction_maxs"].tolist())
+            if item["input_reference"] is not None:
+                upper_reference_values.append(item["input_reference"])
 
         if actual_reference is not None:
-            ax.axhline(
-                y=actual_reference,
-                color="0.15",
-                linestyle="--",
-                linewidth=1.2,
-                zorder=1,
-                label="actual",
-            )
+            lower_values.append(actual_reference)
 
-        ax.set_xlabel("Checkpoint")
-        ax.set_ylabel("Average Dependency Length")
-        ax.margins(x=0.02, y=0.05)
+        if not lower_values:
+            continue
+
+        lower_focus_max = max(lower_values)
+        outlier_references = [
+            value for value in upper_reference_values
+            if value > lower_focus_max * 1.35
+        ]
+        use_broken_axis = bool(outlier_references)
+
+        if use_broken_axis:
+            fig, (ax_top, ax_bottom) = plt.subplots(
+                2,
+                1,
+                figsize=(4.8, 4.8),
+                sharex=True,
+                gridspec_kw={"height_ratios": [1, 4], "hspace": 0.05},
+            )
+            axes = [ax_top, ax_bottom]
+        else:
+            fig, ax_bottom = plt.subplots(figsize=(4.8, 4.8))
+            ax_top = None
+            axes = [ax_bottom]
+
+        for item in series_data:
+            lower_errors = item["prediction_means"] - item["prediction_mins"]
+            upper_errors = item["prediction_maxs"] - item["prediction_means"]
+
+            for axis in axes:
+                if item["input_reference"] is not None:
+                    axis.axhline(
+                        y=item["input_reference"],
+                        color=item["color"],
+                        linestyle=":",
+                        linewidth=1.1,
+                        alpha=0.7,
+                        zorder=1,
+                        label=f"input {format_perturbation_label(item['perturbation'])}",
+                    )
+
+                axis.plot(
+                    item["checkpoints"],
+                    item["prediction_means"],
+                    color=item["color"],
+                    marker=item["marker"],
+                    linestyle=item["linestyle"],
+                    linewidth=1.8,
+                    markersize=5,
+                    markeredgewidth=0.5,
+                    markeredgecolor="white",
+                    label=f"pred. {format_perturbation_label(item['perturbation'])}",
+                    alpha=0.95,
+                )
+                axis.errorbar(
+                    item["checkpoints"],
+                    item["prediction_means"],
+                    yerr=[lower_errors, upper_errors],
+                    fmt="none",
+                    ecolor=item["color"],
+                    elinewidth=2.2,
+                    capsize=0,
+                    alpha=0.95,
+                    zorder=2,
+                )
+
+        for axis in axes:
+            if actual_reference is not None:
+                axis.axhline(
+                    y=actual_reference,
+                    color="0.15",
+                    linestyle="--",
+                    linewidth=1.2,
+                    zorder=1,
+                    label="actual",
+                )
+
+        if use_broken_axis:
+            lower_min = min(lower_values)
+            bottom_padding = max(0.08, (lower_focus_max - lower_min) * 0.15)
+            ax_bottom.set_ylim(max(0, lower_min - bottom_padding), lower_focus_max + bottom_padding)
+
+            top_min = min(outlier_references)
+            top_max = max(outlier_references)
+            top_padding = max(0.15, (top_max - top_min) * 0.18)
+            ax_top.set_ylim(top_min - top_padding, top_max + top_padding)
+
+            ax_top.spines["bottom"].set_visible(False)
+            ax_bottom.spines["top"].set_visible(False)
+            ax_top.tick_params(labeltop=False, bottom=False)
+            ax_bottom.xaxis.tick_bottom()
+
+            d = 0.012
+            kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+            ax_top.plot((-d, +d), (-d, +d), **kwargs)
+            ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+            kwargs.update(transform=ax_bottom.transAxes)
+            ax_bottom.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+            ax_bottom.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+        else:
+            lower_min = min(lower_values)
+            lower_max = max(lower_values)
+            padding = max(0.08, (lower_max - lower_min) * 0.15)
+            ax_bottom.set_ylim(max(0, lower_min - padding), lower_max + padding)
+
+        ax_bottom.set_xlabel("Checkpoint")
+        ax_bottom.set_ylabel("Average Dependency Length")
+        ax_bottom.margins(x=0.02, y=0.05)
 
         title = format_dataset_label(dataset)
         if title_prefix:
             title = f"{title_prefix} {title}".strip()
         if title:
-            ax.set_title(title)
-        ax.legend(loc="best", fontsize=6.5)
+            if use_broken_axis:
+                ax_top.set_title(title)
+            else:
+                ax_bottom.set_title(title)
+
+        handles, labels = [], []
+        for axis in axes:
+            axis_handles, axis_labels = axis.get_legend_handles_labels()
+            for handle, label in zip(axis_handles, axis_labels):
+                if label not in labels:
+                    handles.append(handle)
+                    labels.append(label)
+        ax_bottom.legend(handles, labels, loc="best", fontsize=6.5)
 
         fig.tight_layout()
         output_png = output_dir / f"{dataset}_adl_checkpoint_plot.png"
