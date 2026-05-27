@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+import pandas as pd
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -30,6 +31,7 @@ METRIC_LABELS = {
 }
 
 CHECKPOINT_METRICS = ["exact_match", "BLEU"]
+CSV_CHECKPOINT_PREFIX = "full_samples_"
 
 
 def checkpoint_sort_key(checkpoint_name):
@@ -79,6 +81,28 @@ def parse_metric_filename(file_path, metric_name):
     )
 
 
+def parse_checkpoint_csv_filename(file_path):
+    stem = Path(file_path).stem
+    if not stem.startswith(CSV_CHECKPOINT_PREFIX):
+        raise ValueError(f"Unsupported checkpoint csv filename: {file_path}")
+
+    body = stem[len(CSV_CHECKPOINT_PREFIX):]
+
+    for perturbation in sorted(PERTURBATIONS, key=len, reverse=True):
+        marker = f"_{perturbation}_checkpoint-"
+        if marker in body:
+            dataset, checkpoint_suffix = body.split(marker, 1)
+            checkpoint = f"checkpoint-{checkpoint_suffix}"
+            if not dataset:
+                raise ValueError(f"Missing dataset name in filename: {file_path}")
+            return dataset, perturbation, checkpoint
+
+    raise ValueError(
+        f"Could not determine perturbation/checkpoint for {file_path}. "
+        f"Expected one of: {', '.join(PERTURBATIONS)}"
+    )
+
+
 def find_metric_files(inputs, metric_name):
     files = []
     expected_name = f"results_*_{metric_name}.json"
@@ -99,6 +123,25 @@ def find_metric_files(inputs, metric_name):
         raise FileNotFoundError(
             f"No files matching {expected_name} found in: {', '.join(inputs)}"
         )
+
+    return sorted(set(files))
+
+
+def find_checkpoint_csv_files(inputs):
+    files = []
+    expected_name = f"{CSV_CHECKPOINT_PREFIX}*_checkpoint-*.csv"
+
+    for input_path in inputs:
+        path = Path(input_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Input path not found: {input_path}")
+
+        if path.is_file():
+            if path.match(expected_name):
+                files.append(path)
+            continue
+
+        files.extend(sorted(path.rglob(expected_name)))
 
     return sorted(set(files))
 
@@ -172,6 +215,13 @@ def format_metric_short(metric_name):
         "avg_dependency_length": "ADL",
     }
     return mapping.get(metric_name, metric_name)
+
+
+def is_local_shuffle_family(perturbation):
+    return perturbation in {"localShuffle", "localShuffle3", "localShuffle5"}
+
+
+LOCAL_SHUFFLE_AXIS_BREAK = (3.3, 3.55)
 
 
 def plot_seed_bar_chart(grouped_scores, metric_name, output_file, error_bar="std", title=""):
@@ -297,6 +347,45 @@ def summarize_checkpoint_group(files):
     return checkpoints, means, mins, maxs
 
 
+def aggregate_adl_runs(csv_files):
+    grouped = defaultdict(list)
+
+    for file_path in csv_files:
+        dataset, perturbation, checkpoint = parse_checkpoint_csv_filename(file_path)
+        checkpoint_id = checkpoint_number(checkpoint)
+        if checkpoint_id is None:
+            continue
+        grouped[(dataset, perturbation, checkpoint_id)].append(Path(file_path))
+
+    return grouped
+
+
+def summarize_adl_checkpoint_group(files):
+    prediction_means = []
+    input_means = []
+    actual_means = []
+
+    for file_path in files:
+        df = pd.read_csv(file_path)
+        prediction_means.append(float(df["adl_prediction"].mean()))
+
+        if "adl_input" in df.columns:
+            valid_input = df["adl_input"].dropna()
+            if not valid_input.empty:
+                input_means.append(float(valid_input.mean()))
+
+        if "adl_actual" in df.columns:
+            actual_means.append(float(df["adl_actual"].mean()))
+
+    return {
+        "prediction_mean": float(np.mean(prediction_means)),
+        "prediction_min": float(np.min(prediction_means)),
+        "prediction_max": float(np.max(prediction_means)),
+        "input_mean": float(np.mean(input_means)) if input_means else None,
+        "actual_mean": float(np.mean(actual_means)) if actual_means else None,
+    }
+
+
 def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
     datasets = sorted({dataset for dataset, _, _ in grouped_runs})
     output_dir = Path(output_dir)
@@ -341,7 +430,7 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
                 yerr=[lower_errors, upper_errors],
                 fmt="none",
                 ecolor=color,
-                elinewidth=2.2,
+                elinewidth=1.1,
                 capsize=0,
                 alpha=0.95,
                 zorder=2,
@@ -369,6 +458,210 @@ def plot_checkpoint_language_curves(grouped_runs, output_dir, title_prefix=""):
         fig.savefig(output_png.with_suffix(".pdf"), dpi=400, bbox_inches="tight", facecolor="white")
         plt.close(fig)
         print(f"Saved plot to {output_png}")
+
+
+def plot_adl_language_curves(grouped_adl_runs, output_dir, title_prefix=""):
+    datasets = sorted({dataset for dataset, _, _ in grouped_adl_runs})
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for dataset in datasets:
+        series = [
+            perturbation
+            for perturbation in PERTURBATIONS
+            if any(
+                current_dataset == dataset and current_perturbation == perturbation
+                for current_dataset, current_perturbation, _ in grouped_adl_runs
+            )
+        ]
+
+        for perturbation in series:
+            series_data = []
+            actual_reference = None
+            checkpoints = sorted(
+                checkpoint
+                for current_dataset, current_perturbation, checkpoint in grouped_adl_runs
+                if current_dataset == dataset and current_perturbation == perturbation
+            )
+
+            summaries = [
+                summarize_adl_checkpoint_group(grouped_adl_runs[(dataset, perturbation, checkpoint)])
+                for checkpoint in checkpoints
+            ]
+
+            prediction_means = np.array([item["prediction_mean"] for item in summaries], dtype=float)
+            prediction_mins = np.array([item["prediction_min"] for item in summaries], dtype=float)
+            prediction_maxs = np.array([item["prediction_max"] for item in summaries], dtype=float)
+            input_reference = summaries[0]["input_mean"]
+            actual_reference = summaries[0]["actual_mean"]
+            print(f"{perturbation}  - input reference: {input_reference}, actual reference: {actual_reference}")
+            series_data.append({
+                "perturbation": perturbation,
+                "checkpoints": checkpoints,
+                "prediction_means": prediction_means,
+                "prediction_mins": prediction_mins,
+                "prediction_maxs": prediction_maxs,
+                "input_reference": input_reference,
+                "color": COLORS[PERTURBATIONS.index(perturbation) % len(COLORS)],
+                "marker": MARKERS[PERTURBATIONS.index(perturbation) % len(MARKERS)],
+                "linestyle": LINESTYLES[PERTURBATIONS.index(perturbation) % len(LINESTYLES)],
+            })
+
+            lower_values = prediction_mins.tolist() + prediction_maxs.tolist()
+            if actual_reference is not None:
+                lower_values.append(actual_reference)
+
+            if not lower_values:
+                continue
+
+            upper_reference_values = [input_reference] if input_reference is not None else []
+            lower_focus_max = max(lower_values)
+            use_fixed_local_break = (
+                is_local_shuffle_family(perturbation)
+                and input_reference is not None
+                and input_reference >= LOCAL_SHUFFLE_AXIS_BREAK[1]
+            )
+            outlier_references = [
+                value for value in upper_reference_values
+                if value > lower_focus_max * 1.35
+            ]
+            use_broken_axis = use_fixed_local_break or bool(outlier_references)
+
+            if use_broken_axis:
+                fig, (ax_top, ax_bottom) = plt.subplots(
+                    2,
+                    1,
+                    figsize=(4.8, 4.8),
+                    sharex=True,
+                    gridspec_kw={"height_ratios": [1, 4], "hspace": 0.05},
+                )
+                axes = [ax_top, ax_bottom]
+            else:
+                fig, ax_bottom = plt.subplots(figsize=(4.8, 4.8))
+                ax_top = None
+                axes = [ax_bottom]
+
+            item = series_data[0]
+            lower_errors = item["prediction_means"] - item["prediction_mins"]
+            upper_errors = item["prediction_maxs"] - item["prediction_means"]
+
+            for axis in axes:
+                if item["input_reference"] is not None:
+                    axis.axhline(
+                        y=item["input_reference"],
+                        color=item["color"],
+                        linestyle=":",
+                        linewidth=1.1,
+                        alpha=0.7,
+                        zorder=1,
+                        label="input",
+                    )
+
+                axis.plot(
+                    item["checkpoints"],
+                    item["prediction_means"],
+                    color=item["color"],
+                    marker=item["marker"],
+                    linestyle=item["linestyle"],
+                    linewidth=1.8,
+                    markersize=5,
+                    markeredgewidth=0.5,
+                    markeredgecolor="white",
+                    label="prediction",
+                    alpha=0.95,
+                )
+                axis.errorbar(
+                    item["checkpoints"],
+                    item["prediction_means"],
+                    yerr=[lower_errors, upper_errors],
+                    fmt="none",
+                    ecolor=item["color"],
+                    elinewidth=1.1,
+                    capsize=0,
+                    alpha=0.95,
+                    zorder=2,
+                )
+
+            for axis in axes:
+                if actual_reference is not None:
+                    axis.axhline(
+                        y=actual_reference,
+                        color="0.15",
+                        linestyle="--",
+                        linewidth=1.2,
+                        zorder=1,
+                        label="actual",
+                    )
+
+            if use_broken_axis:
+                lower_min = min(lower_values)
+                bottom_padding = max(0.08, (lower_focus_max - lower_min) * 0.15)
+                bottom_ylim_max = lower_focus_max + bottom_padding
+                if use_fixed_local_break:
+                    bottom_ylim_max = LOCAL_SHUFFLE_AXIS_BREAK[0]
+                elif is_local_shuffle_family(perturbation):
+                    bottom_ylim_max = max(bottom_ylim_max, 3.6)
+                ax_bottom.set_ylim(max(0, lower_min - bottom_padding), bottom_ylim_max)
+
+                if use_fixed_local_break:
+                    top_min = LOCAL_SHUFFLE_AXIS_BREAK[1]
+                    top_max = max(outlier_references) if outlier_references else LOCAL_SHUFFLE_AXIS_BREAK[1]
+                    top_padding = max(0.08, (top_max - top_min) * 0.18)
+                else:
+                    top_min = min(outlier_references)
+                    top_max = max(outlier_references)
+                    top_padding = max(0.15, (top_max - top_min) * 0.18)
+                ax_top.set_ylim(top_min, top_max + top_padding)
+
+                ax_top.spines["bottom"].set_visible(False)
+                ax_bottom.spines["top"].set_visible(False)
+                ax_top.tick_params(labeltop=False, bottom=False)
+                ax_bottom.xaxis.tick_bottom()
+
+                d = 0.012
+                kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+                ax_top.plot((-d, +d), (-d, +d), **kwargs)
+                ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+                kwargs.update(transform=ax_bottom.transAxes)
+                ax_bottom.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+                ax_bottom.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+            else:
+                lower_min = min(lower_values)
+                lower_max = max(lower_values)
+                padding = max(0.08, (lower_max - lower_min) * 0.15)
+                bottom_ylim_max = lower_max + padding
+                if is_local_shuffle_family(perturbation):
+                    bottom_ylim_max = max(bottom_ylim_max, 3.6)
+                ax_bottom.set_ylim(max(0, lower_min - padding), bottom_ylim_max)
+
+            ax_bottom.set_xlabel("Checkpoint")
+            ax_bottom.set_ylabel("Average Dependency Length")
+            ax_bottom.margins(x=0.02, y=0.05)
+
+            title = f"{format_dataset_label(dataset)} - {format_perturbation_label(perturbation)}"
+            if title_prefix:
+                title = f"{title_prefix} {title}".strip()
+            if title:
+                if use_broken_axis:
+                    ax_top.set_title(title)
+                else:
+                    ax_bottom.set_title(title)
+
+            handles, labels = [], []
+            for axis in axes:
+                axis_handles, axis_labels = axis.get_legend_handles_labels()
+                for handle, label in zip(axis_handles, axis_labels):
+                    if label not in labels:
+                        handles.append(handle)
+                        labels.append(label)
+            ax_bottom.legend(handles, labels, loc="best", fontsize=6.5)
+
+            fig.tight_layout()
+            output_png = output_dir / f"{dataset}_{perturbation}_adl_checkpoint_plot.png"
+            fig.savefig(output_png, dpi=400, bbox_inches="tight", facecolor="white")
+            fig.savefig(output_png.with_suffix(".pdf"), dpi=400, bbox_inches="tight", facecolor="white")
+            plt.close(fig)
+            print(f"Saved plot to {output_png}")
 
 
 def run_bar_mode(args):
@@ -404,6 +697,12 @@ def run_checkpoint_mode(args):
     grouped_runs = aggregate_checkpoint_runs(metric_files)
     output_dir = args.output_dir or "checkpoint_plots"
     plot_checkpoint_language_curves(grouped_runs, output_dir=output_dir, title_prefix=args.title)
+
+    csv_files = find_checkpoint_csv_files(args.inputs)
+    if csv_files:
+        grouped_adl_runs = aggregate_adl_runs(csv_files)
+        if grouped_adl_runs:
+            plot_adl_language_curves(grouped_adl_runs, output_dir=output_dir, title_prefix=args.title)
 
 
 def main():

@@ -88,10 +88,10 @@ def setup_acl_style():
 COLORS = [
     "#FF8B05",   # orange
     "#2EB3FF",   # sky blue
+    "#008F27",   # dark green
     "#98DE2C",   # lime green
     "#FF5757",   # red
     "#8E7DFF",   # purple
-    "#008F27",   # dark green
     "#FFBE4F",   # gold
     "#DBDB00",   # yellow
     "#FF6E74",   # salmon

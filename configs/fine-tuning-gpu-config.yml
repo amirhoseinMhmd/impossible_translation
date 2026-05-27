@@ -37,7 +37,7 @@ training_arguments:
   data_seed: 123
 
 data_arguments:
-  max_length: 128
+  max_length: 512
 
 sample_arguments:
   batch_size: 128
