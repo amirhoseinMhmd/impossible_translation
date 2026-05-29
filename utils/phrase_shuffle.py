@@ -2,6 +2,7 @@ import argparse
 import os
 from typing import List, Optional
 
+import benepar
 import spacy
 from tqdm import tqdm
 from numpy.random import default_rng
@@ -16,7 +17,13 @@ except OSError:
     nlp = spacy.load("en_core_web_md")
 
 if not nlp.has_pipe("benepar"):
-    nlp.add_pipe("benepar", config={"model": "benepar_en3"})
+    try:
+        nlp.add_pipe("benepar", config={"model": "benepar_en3"})
+    except LookupError as exc:
+        raise RuntimeError(
+            "benepar is installed, but the 'benepar_en3' model is missing. "
+            "Install it with: python -m benepar.download benepar_en3"
+        ) from exc
 
 
 def _leaf_phrases(sent):
