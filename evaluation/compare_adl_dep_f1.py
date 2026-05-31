@@ -1,16 +1,28 @@
 import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import spacy
-from accelerate.utils import tqdm
+from tqdm import tqdm
+
+GPU_ENABLED = False
+NLP_MODEL_NAME = "en_core_web_sm"
+
+try:
+    GPU_ENABLED = spacy.prefer_gpu()
+except Exception:
+    GPU_ENABLED = False
 
 try:
     nlp = spacy.load("en_core_web_trf")
+    NLP_MODEL_NAME = "en_core_web_trf"
 except OSError:
     nlp = spacy.load("en_core_web_sm")
+    NLP_MODEL_NAME = "en_core_web_sm"
 
+DEFAULT_BATCH_SIZE = int(os.environ.get("SPACY_PIPE_BATCH_SIZE", "64"))
 
 SPECIAL_TOKENS = {"R", "S", "P"}
 
@@ -92,25 +104,51 @@ def load_pairs(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", required=True)
+    parser.add_argument("--batch_size", type=int, default=DEFAULT_BATCH_SIZE)
     args = parser.parse_args()
 
-    pairs = load_pairs(args.input)
+    print(
+        f"spaCy model: {NLP_MODEL_NAME} | "
+        f"GPU enabled: {GPU_ENABLED} | "
+        f"batch size: {args.batch_size}"
+    )
 
+    pairs = load_pairs(args.input)
+    perturbed_texts = [p for p, o in pairs]
+    original_texts = [o for p, o in pairs]
+
+    # Batch-parse all texts in two passes through nlp.pipe()
+    print("Parsing perturbed texts...")
+    perturbed_docs = list(tqdm(
+        nlp.pipe(perturbed_texts, batch_size=args.batch_size),
+        total=len(perturbed_texts),
+        desc="Perturbed",
+    ))
+
+    print("Parsing original texts...")
+    original_docs = list(tqdm(
+        nlp.pipe(original_texts, batch_size=args.batch_size),
+        total=len(original_texts),
+        desc="Original",
+    ))
+
+    # Compute metrics using pre-parsed docs
     perturbed_adls = []
     original_adls = []
     remapped_input_adls = []
     dep_f1_scores = []
 
-    for perturbed, original in tqdm(pairs):
-        perturbed_doc = nlp(perturbed)
-        original_doc = nlp(original)
+    for i in tqdm(range(len(pairs)), desc="Computing metrics"):
+        perturbed_doc = perturbed_docs[i]
+        original_doc = original_docs[i]
+        perturbed_text = perturbed_texts[i]
 
         perturbed_adls.append(avg_dependency_length(perturbed_doc))
         original_adls.append(avg_dependency_length(original_doc))
-        remapped_input_adls.append(remapped_adl(original_doc, perturbed))
+        remapped_input_adls.append(remapped_adl(original_doc, perturbed_text))
         dep_f1_scores.append(dep_f1(original_doc, perturbed_doc))
 
-    print(f"num_samples: {len(pairs)}")
+    print(f"\nnum_samples: {len(pairs)}")
     print(f"avg_adl_perturbed: {np.mean(perturbed_adls):.4f}")
     print(f"avg_adl_original: {np.mean(original_adls):.4f}")
     print(f"avg_adl_input_remapped: {np.mean(remapped_input_adls):.4f}")
