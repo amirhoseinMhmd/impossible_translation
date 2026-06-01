@@ -14,7 +14,7 @@ from transformers import (
 from datasets import Dataset
 from tqdm import tqdm
 
-# Add parent directory to path to allow imports from utils
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.utils import (
@@ -25,6 +25,8 @@ from utils.utils import (
     apply_training_seed,
     split_training_data,
 )
+from utils.phrase_shuffle import phrase_shuffle
+
 from utils.reverse import partial_reverse_batch
 from utils.hop import wordhop_batch
 from utils.shuffle import local_shuffle_batch, local_shuffle_batch_with_window, full_shuffle_batch
@@ -35,6 +37,7 @@ functions = {
     "localShuffle3": lambda texts: local_shuffle_batch_with_window(texts, window_size=3),
     "localShuffle5": lambda texts: local_shuffle_batch_with_window(texts, window_size=5),
     "fullShuffle": lambda texts: full_shuffle_batch(texts, seed=57),
+    "phraseShuffle": lambda texts: phrase_shuffle(texts),
     "wordHop": wordhop_batch
 }
 
@@ -610,6 +613,8 @@ if __name__ == "__main__":
         model = 'mission-impossible-lms/local-shuffle-w5-gpt2'
     elif args.type == 'fullShuffle':
         model = 'mission-impossible-lms/deterministic-shuffle-s57-gpt2'
+    elif args.type == 'phraseShuffle':
+        model = 'mission-impossible-lms/local-shuffle-w3-gpt2'
     else:
-        raise ValueError("Invalid perturbation type. Choose from 'wordHop', 'partialReverse', 'localShuffle', 'localShuffle3', 'localShuffle5', or 'fullShuffle'.")
+        raise ValueError("Invalid perturbation type. Choose from 'wordHop', 'partialReverse', 'localShuffle', 'localShuffle3', 'localShuffle5', 'phraseShuffle', or 'fullShuffle'.")
     main(config=config, input_file=args.path, model_name=model, type_of_perturbation=args.type)

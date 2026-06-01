@@ -6,7 +6,7 @@ from numpy.random import default_rng
 from tqdm import tqdm
 from transformers import GPT2Tokenizer
 
-from utils import load_sentences_from_file, save_dataset
+from utils.utils import load_sentences_from_file, save_dataset
 
 tokenizer = None
 

@@ -157,3 +157,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# num_samples: 97097
+# avg_adl_perturbed: 3.2133
+# avg_adl_original: 3.1520
+# avg_adl_input_remapped: 3.2189
+# avg_dep_f1_perturbed_vs_original: 0.6388
+
+# exact_matches: 5258
+# exact_match_rate: 0.0542
+#avg_bleu_perturbed_vs_original: 0.4999

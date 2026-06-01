@@ -48,7 +48,7 @@ def _leaf_phrases(sent):
     return spans
 
 
-def phrase_shuffle(text: str, seed: int = None) -> Optional[str]:
+def process(text: str, seed: int = None) -> Optional[str]:
     text = text.strip()
     if len(text.split()) < 3:
         return None
@@ -83,10 +83,10 @@ def phrase_shuffle(text: str, seed: int = None) -> Optional[str]:
     return "".join(output).strip()
 
 
-def phrase_shuffle_batch(texts: List[str], seed: int = None) -> List[tuple]:
+def phrase_shuffle(texts: List[str], seed: int = None) -> List[tuple]:
     training_data = []
     for sentence in tqdm(texts):
-        perturbed = phrase_shuffle(sentence, seed=seed)
+        perturbed = process(sentence, seed=seed)
         if perturbed is not None:
             training_data.append((perturbed, sentence))
     return training_data
@@ -94,7 +94,7 @@ def phrase_shuffle_batch(texts: List[str], seed: int = None) -> List[tuple]:
 
 def pre_process(input_file, training_data_path, seed=42):
     sentences = load_sentences_from_file(input_file)
-    training_data = phrase_shuffle_batch(sentences, seed=seed)
+    training_data = phrase_shuffle(sentences, seed=seed)
     save_dataset(training_data, training_data_path)
 
 
@@ -104,5 +104,5 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    output = f"training_data_{os.path.basename(args.input).split('.')[0]}_phraseShuffer.json"
+    output = f"training_data_{os.path.basename(args.input).split('.')[0]}_phraseShuffle.json"
     pre_process(args.input, output, seed=args.seed)

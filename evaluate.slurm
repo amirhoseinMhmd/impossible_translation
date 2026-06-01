@@ -12,6 +12,7 @@ set -euo pipefail
 INPUT_DIR="$1"
 PERTURBATION="$2"
 OUTPUT_DIR="${INPUT_DIR}/evaluation"
+SEED=$3
 
 mkdir -p logs
 source .venv/bin/activate
@@ -21,4 +22,4 @@ python evaluation/evaluate.py \
   -o "$OUTPUT_DIR" \
   -t "$PERTURBATION" \
   --batch_size 128 \
-  > "logs/evaluate_${PERTURBATION}.log" 2>&1
+  > "logs/evaluate_${PERTURBATION}_${SEED}.log" 2>&1
