@@ -20,6 +20,7 @@ PERTURBATIONS = [
     "localShuffle",
     "fullShuffle",
     "wordHop",
+    'phraseShuffle',
 ]
 
 DETAIL_COLUMNS = [
