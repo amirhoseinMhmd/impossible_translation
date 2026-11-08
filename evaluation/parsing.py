@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 
 GPU_ENABLED = False
-NLP_MODEL_NAME = "en_core_web_sm"
+# NLP_MODEL_NAME = "en_core_web_sm"
 
 try:
     GPU_ENABLED = spacy.prefer_gpu()
